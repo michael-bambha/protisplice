@@ -10,7 +10,7 @@ from collections import defaultdict
 from typing import Dict, List, Tuple, Any, Optional, TextIO
 import re
 import pysam
-from Bio.seq import Seq
+from Bio.Seq import Seq
 
 
 def main():
