@@ -7,7 +7,7 @@ Description: A python script for an ML workflow predicting alternative splice si
 
 import argparse
 from collections import defaultdict
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional, TextIO
 import re
 import pysam
 
@@ -19,15 +19,17 @@ def main():
     #args = get_cli_args()
     transcripts = group_exons_by_transcript("transcripts.gtf")
     junctions = get_splice_junctions(transcripts)
-    for junction in junctions:
-        seqid = junction['seqid']
-        coord = junction['coord']
-        strand = junction['strand']
-        junc_type = junction['type']
-        win_start, win_end = get_window_coords(strand, junc_type, coord, n_exon=20, n_intron=10)
-        if win_start and win_end:
-            seq = extract_sequence("Albugo_FASTA.fa", seqid, win_start, win_end)
-            write_seq_to_file(seq)
+    output_file = "output.txt"
+    with open(output_file, "w", encoding='utf-8') as f:
+        for junction in junctions:
+            seqid = junction['seqid']
+            coord = junction['coord']
+            strand = junction['strand']
+            junc_type = junction['type']
+            win_start, win_end = get_window_coords(strand, junc_type, coord, n_exon=20, n_intron=10)
+            if win_start and win_end:
+                seq = extract_sequence("Albugo_FASTA.fa", seqid, win_start, win_end)
+                write_seq_to_file(seq, f)
 
 
 def get_cli_args():
@@ -265,19 +267,15 @@ def extract_sequence(fasta: str, seq_id: str, win_start: int, win_end: int) -> O
     return seq
 
 
-def write_seq_to_file(seq: str) -> None:
+def write_seq_to_file(seq: str, f: TextIO) -> None:
     """Write sequences to a file.
 
     Args:
         seq (str): sequence extracted from FASTA
-
-    Returns:
-        None: writes the seq to a file
+        f (TextIO): Output file to write the seq
     """
     if seq:
-        with open("output.txt", "w", encoding='utf-8') as f:
-            f.write(f"{seq}\n")
-    return None
+        f.write(f"{seq}\n")
 
 
 main()
