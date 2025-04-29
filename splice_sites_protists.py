@@ -7,9 +7,27 @@ Description: A python script for an ML workflow predicting alternative splice si
 
 import argparse
 from collections import defaultdict
+from typing import Dict, List, Tuple, Any, Optional
 import re
-from typing import Dict, List, Tuple, Any
 import pysam
+
+
+def main():
+    """
+    Business logic
+    """
+    #args = get_cli_args()
+    transcripts = group_exons_by_transcript("transcripts.gtf")
+    junctions = get_splice_junctions(transcripts)
+    for junction in junctions:
+        seqid = junction['seqid']
+        coord = junction['coord']
+        strand = junction['strand']
+        junc_type = junction['type']
+        win_start, win_end = get_window_coords(strand, junc_type, coord, n_exon=20, n_intron=10)
+        if win_start and win_end:
+            seq = extract_sequence("Albugo_FASTA.fa", seqid, win_start, win_end)
+            write_seq_to_file(seq)
 
 
 def get_cli_args():
@@ -39,23 +57,26 @@ def get_cli_args():
     parser.add_argument(
         "-ne", "--n_exon",
         required=True,
+        type=int,
         metavar="INT",
         help="Number of bases to include in the exon region of the window."
     )
     parser.add_argument(
         "-ni", "--n_intron",
         required=True,
+        type=int,
         metavar="INT",
         help="Number of bases to include in the intron region of the window"
     )
+    return parser.parse_args()
 
 
-def parse_transcript_id(gtf_str: str) -> Dict[str, str]:
+def _parse_transcript_id(gtf_str: str) -> Dict[str, str]:
     """Parse column 9 of a GTF file into a dictionary by separating k/v pairs
     by semicolons.
 
     Args:
-        gtf_str (str): Path to GTF file
+        gtf_str (str): 9th column of a GTF file
 
     Returns:
         Dict[str, str]: Dictionary in the structure:
@@ -89,11 +110,11 @@ def group_exons_by_transcript(gtf: str) -> Dict[str, Dict[str, Any]]:
                      for each exon belonging to the transcript. Coordinates are integers.}
     """
     transcripts = defaultdict(lambda: {"info": {}, "exons": []})
-    with open(gtf, "r") as f:
+    with open(gtf, "r", encoding='utf-8') as f:
         for line in f:
             fields = line.strip().split("\t")
             if fields[2] == "exon":
-                attrs = parse_transcript_id(fields[8])
+                attrs = _parse_transcript_id(fields[8])
                 transcript_id = attrs.get("transcript_id")
                 seqid, start, end, strand = [fields[i] for i in [0, 3, 4, 6]]
                 transcript_entry = transcripts[transcript_id]
@@ -105,8 +126,8 @@ def group_exons_by_transcript(gtf: str) -> Dict[str, Dict[str, Any]]:
 
 
 def get_splice_junctions(transcripts: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Find coordinates (start/end) of splice junctions and whether they are donor or acceptor regions.
-
+    """Find coordinates (start/end) of splice junctions and whether
+      they are donor or acceptor regions.
     Args:
         transcripts (Dict[str, Dict[str, Any]]): A dictionary where keys are transcript IDs.
         Each value is another dictionary with two keys:
@@ -115,9 +136,9 @@ def get_splice_junctions(transcripts: Dict[str, Dict[str, Any]]) -> List[Dict[st
                      for each exon belonging to the transcript. Coordinates are integers.}
 
     Returns:
-        List[Dict[str, Any]]: List of Dictionaries, where each element of the list is a splice junction.
-        Each junction is a dictionary with 5 keys:
-            {'id': }
+        List[Dict[str, Any]]: List of Dictionaries, where each element of the list
+          is a splice junction. Each junction is a dictionary with 5 keys:
+            {'id': str, 'seqid': str, 'coord': int, 'strand': str, 'type': str}
     """
     junctions = []
     for transcript_id in transcripts:
@@ -129,22 +150,58 @@ def get_splice_junctions(transcripts: Dict[str, Dict[str, Any]]) -> List[Dict[st
         seqid = transcript["info"]["seqid"]
 
         if len(exons_sorted) > 1:
-            for i in range(len(exons_sorted)):
-                exon = exons_sorted[i]
+            for i, exon in enumerate(exons_sorted):
+                # exon is a tuple as (start, end)
+                start = exon[0]
+                end = exon[1]
                 if i > 0:
+                    acceptor_coord = None
                     if strand == "+":
-                        junctions.append({'id': f"{transcript_id}_acceptor_{i}", 'seqid': seqid, 'coord': exon[0], 'strand': '+', 'type': 'acceptor'})
+                        # acceptor is at the start of the current exon
+                        acceptor_coord = start
+                        junctions.append({
+                            'id': f"{transcript_id}_acceptor_{i}",  # index refers to preceding exon
+                            'seqid': seqid,
+                            'coord': acceptor_coord,
+                            'strand': '+',
+                            'type': 'acceptor'
+                        })
                     elif strand == "-":
-                        junctions.append({'id': f"{transcript_id}_acceptor_{i}", 'seqid': seqid, 'coord': exon[1], 'strand': '-', 'type': 'acceptor'})
-                if i < len(exons) - 1:
+                        # acceptor is at the end of the current exon
+                        acceptor_coord = end
+                        junctions.append({
+                            'id': f"{transcript_id}_acceptor_{i}",
+                            'seqid': seqid,
+                            'coord': acceptor_coord,
+                            'strand': '-',
+                            'type': 'acceptor'
+                        })
+                if i < len(exons_sorted) - 1:
+                    donor_coord = None
                     if strand == "+":
-                        junctions.append({'id': f"{transcript_id}_donor_{i}", 'seqid': seqid, 'coord': exon[1], 'strand': '+', 'type': 'donor'})
+                        # donor is at the end of the current exon
+                        donor_coord = end
+                        junctions.append({
+                            'id': f"{transcript_id}_donor_{i}",  # index refers to following exon
+                            'seqid': seqid,
+                            'coord': donor_coord,
+                            'strand': '+',
+                            'type': 'donor'
+                        })
                     elif strand == "-":
-                        junctions.append({'id': f"{transcript_id}_donor_{i}", 'seqid': seqid, 'coord': exon[0], 'strand': '-', 'type': 'donor'})
+                        # donor is at the start of the current exon
+                        donor_coord = start
+                        junctions.append({
+                            'id': f"{transcript_id}_donor_{i}",
+                            'seqid': seqid,
+                            'coord': donor_coord,
+                            'strand': '-',
+                            'type': 'donor'
+                        })
     return junctions
 
 
-def get_window_coords(strand: str, junc_type: str, coord: int, N_exon: int, N_intron: int) -> Tuple:
+def get_window_coords(strand: str, junc_type: str, coord: int, n_exon: int, n_intron: int) -> Tuple:
     """Obtains the window coordinates for a sequence, given a known splice site junction coordinate
     and pre-defined window lengths in exon and intron regions.
 
@@ -161,22 +218,22 @@ def get_window_coords(strand: str, junc_type: str, coord: int, N_exon: int, N_in
     win_start, win_end = None, None
     if strand == "+":
         if junc_type == "donor":
-            win_start = coord - N_exon + 1
-            win_end = coord + N_intron
-        else:
-            win_start = coord - N_intron
-            win_end = coord + N_exon - 1
+            win_start = coord - n_exon + 1
+            win_end = coord + n_intron
+        elif junc_type == "acceptor":
+            win_start = coord - n_intron
+            win_end = coord + n_exon - 1
     elif strand == "-":
         if junc_type == "donor":
-            win_start = coord - N_intron
-            win_end = coord + N_exon - 1
-    else:
-        win_start = coord - N_exon + 1
-        win_end = coord + N_intron
+            win_start = coord - n_intron
+            win_end = coord + n_exon - 1
+        elif junc_type == "acceptor":
+            win_start = coord - n_exon + 1
+            win_end = coord + n_intron
     return win_start, win_end
 
 
-def extract_sequence(fasta: str, seq_id: str, win_start: int, win_end: int) -> str:
+def extract_sequence(fasta: str, seq_id: str, win_start: int, win_end: int) -> Optional[str]:
     """Obtain a sequence from an indexed FASTA file, given window coordinates.
 
     Args:
@@ -188,11 +245,39 @@ def extract_sequence(fasta: str, seq_id: str, win_start: int, win_end: int) -> s
     Returns:
         str: Sequence of the desired window
     """
-    with pysam.FastaFile(fasta) as f:
+    if win_start > win_end:
+        return ""
+    if win_start < 1:
+        win_start = 1
+        if win_start > win_end:
+            return ""
+    seq = ""
+    with pysam.FastaFile(fasta) as f:  # pylint: disable=no-member
         if seq_id not in f.references:
-            return None
-        # pysam takes 0-based coords -- need to subtract 1 from start
-        win_start = win_start - 1
+            return ""
+        seq_len = f.get_reference_length(seq_id)
+        win_start = win_start - 1  # pysam takes 0-based coords
+        if win_end > seq_len:  # truncate end if it is larger than seq length
+            win_end = seq_len
+        if win_start >= win_end:  # check after end is truncated also
+            return ""
         seq = f.fetch(seq_id, win_start, win_end)
     return seq
 
+
+def write_seq_to_file(seq: str) -> None:
+    """Write sequences to a file.
+
+    Args:
+        seq (str): sequence extracted from FASTA
+
+    Returns:
+        None: writes the seq to a file
+    """
+    if seq:
+        with open("output.txt", "w", encoding='utf-8') as f:
+            f.write(f"{seq}\n")
+    return None
+
+
+main()
