@@ -10,14 +10,15 @@ from collections import defaultdict
 from typing import Dict, List, Tuple, Any, Optional, TextIO
 import re
 import pysam
+from Bio.seq import Seq
 
 
 def main():
     """
     Business logic
     """
-    #args = get_cli_args()
-    transcripts = group_exons_by_transcript("transcripts.gtf")
+    args = get_cli_args()
+    transcripts = group_exons_by_transcript(args.gtf)
     junctions = get_splice_junctions(transcripts)
     output_file = "output.txt"
     with open(output_file, "w", encoding='utf-8') as f:
@@ -26,9 +27,12 @@ def main():
             coord = junction['coord']
             strand = junction['strand']
             junc_type = junction['type']
-            win_start, win_end = get_window_coords(strand, junc_type, coord, n_exon=20, n_intron=10)
+            win_start, win_end = get_window_coords(strand, junc_type, coord, args.n_exon,
+                                                   args.n_intron)
             if win_start and win_end:
-                seq = extract_sequence("Albugo_FASTA.fa", seqid, win_start, win_end)
+                seq = extract_sequence(args.fasta, seqid, win_start, win_end)
+                if seq and strand == "-":  # take reverse complement on the (-) strand seqs
+                    seq = str(Seq(seq).reverse_complement())
                 write_seq_to_file(seq, f)
 
 
@@ -58,14 +62,14 @@ def get_cli_args():
     )
     parser.add_argument(
         "-ne", "--n_exon",
-        required=True,
+        default=40,
         type=int,
         metavar="INT",
         help="Number of bases to include in the exon region of the window."
     )
     parser.add_argument(
         "-ni", "--n_intron",
-        required=True,
+        default=80,
         type=int,
         metavar="INT",
         help="Number of bases to include in the intron region of the window"
