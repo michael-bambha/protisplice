@@ -4,7 +4,7 @@
 
 This script identifies splice junctions (donor and acceptor sites) from a gene annotation file (GTF format) and extracts the flanking genomic sequences from a corresponding reference genome (FASTA format). It calculates a window around each splice junction coordinate, defined by a specified number of bases into the exon and intron regions.
 
-Strand information is taken into account when outputting the sequences. IN THE FUTURE: for sequences on the (-) strand,
+Strand information is taken into account when outputting the sequences. For sequences on the (-) strand,
 the reverse complement will be returned.
 
 This script was originally built as a data mining tool for downstream ML workflows. 
@@ -19,9 +19,9 @@ This script was originally built as a data mining tool for downstream ML workflo
 
 pysam can be installed via pip:
 
-    ```bash
-    pip install pysam
-    ```
+```bash
+pip install pysam
+```
 
 A GTF annotation file and both a FASTA and indexed FASTA file are required to execute the script.
 
