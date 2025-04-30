@@ -263,8 +263,7 @@ def extract_sequence(fasta: str, seq_id: str, win_start: int, win_end: int) -> O
             return ""
         seq_len = f.get_reference_length(seq_id)
         win_start = win_start - 1  # pysam takes 0-based coords
-        if win_end > seq_len:  # truncate end if it is larger than seq length
-            win_end = seq_len
+        win_end = min(win_end, seq_len)
         if win_start >= win_end:  # check after end is truncated also
             return ""
         seq = f.fetch(seq_id, win_start, win_end)
