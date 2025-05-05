@@ -2,38 +2,38 @@
 File: splice_sites_protists.py
 Author: Michael Bambha
 Contact: bambha.m@northeastern.edu
-Description: A python script for an ML workflow predicting alternative splice sites in protists.
+Description: A Python script for obtaining true positive and false positive
+sequences around splice sites in protists to be used for downstream model training.
 """
-
 import argparse
 from collections import defaultdict
 from typing import Dict, List, Tuple, Any, Optional, TextIO
+import random
 import re
 import pysam
 from Bio.Seq import Seq
 
 
-def main():
+def main() -> None:
     """
     Business logic
     """
     args = get_cli_args()
     transcripts = group_exons_by_transcript(args.gtf)
     junctions = get_splice_junctions(transcripts)
-    output_file = "output.txt"
-    with open(output_file, "w", encoding='utf-8') as f:
-        for junction in junctions:
-            seqid = junction['seqid']
-            coord = junction['coord']
-            strand = junction['strand']
-            junc_type = junction['type']
-            win_start, win_end = get_window_coords(strand, junc_type, coord, args.n_exon,
-                                                   args.n_intron)
-            if win_start and win_end:
-                seq = extract_sequence(args.fasta, seqid, win_start, win_end)
-                if seq and strand == "-":  # take reverse complement on the (-) strand seqs
-                    seq = str(Seq(seq).reverse_complement())
-                write_seq_to_file(seq, f)
+    count = extract_positive_samples(junctions,
+                                     args.fasta,
+                                     "seqs_positive.fa",
+                                     args.n_exon,
+                                     args.n_intron)
+    transcripts_with_introns = get_intron_coords(transcripts)
+
+    extract_negative_samples(transcripts_with_introns,
+                             args.fasta,
+                             "seqs_negative.fa",
+                             args.n_exon + args.n_intron,  # make equal length to (+) seqs
+                             args.buffer,
+                             count)  # sample the same number of (-) samples
 
 
 def get_cli_args():
@@ -74,7 +74,102 @@ def get_cli_args():
         metavar="INT",
         help="Number of bases to include in the intron region of the window"
     )
+    parser.add_argument(
+        "-b", "--buffer",
+        default=50,
+        type=int,
+        metavar="INT",
+        help="Buffer size for intron region"
+    )
     return parser.parse_args()
+
+
+def extract_positive_samples(junctions: List[Dict[str, Any]],
+                             fasta_path: str,
+                             output_path: str,
+                             n_exon: int,
+                             n_intron: int) -> int:
+    """Logic for obtaining true positives
+
+    Args:
+        junctions (List[Dict[str, Any]]): List of Dictionaries, where each element of the list
+            is a splice junction. Each junction is a dictionary with 5 keys:
+            {'id': str, 'seqid': str, 'coord': int, 'strand': str, 'type': str}
+        fasta_path (str): path to FASTA file
+        output_path (str): path to output file
+        n_exon (int): Number of bases to include in the exon region of the window.
+        n_intron (int): Number of bases to include in the intron region of the window.
+
+    Returns:
+        int: The number of samples written to the file.
+    """
+    count = 0
+    with open(output_path, "w", encoding='utf-8') as f:
+        with pysam.FastaFile(fasta_path) as fasta:
+            for junction in junctions:
+                seqid = junction['seqid']
+                coord = junction['coord']
+                strand = junction['strand']
+                junc_type = junction['type']
+                win_start, win_end = get_window_coords(strand, junc_type, coord, n_exon, n_intron)
+                if win_start is not None and win_end is not None:
+                    seq = extract_sequence(fasta, seqid, win_start, win_end)
+                    if seq:
+                        if strand == "-":
+                            seq = str(Seq(seq).reverse_complement())  # get RC for (-) strands
+                        write_seq_to_file(seq, f)
+                        count += 1
+    return count
+
+
+def extract_negative_samples(transcripts: Dict[str, Dict[str, Any]],
+                             fasta_path: str,
+                             output_path: str,
+                             window_size: int,
+                             buffer_size: int,
+                             num_samples: int) -> None:
+    """Logic for obtaining negative samples.
+
+    Args:
+        transcripts (Dict[str, Dict[str, Any]]): A dictionary where keys are transcript IDs.
+        Each value is another dictionary with three keys:
+            'info': {'seqid': str, 'strand': str} - Chromosome/contig and strand.
+            'exons': List[Tuple[int, int]] - A list of (start, end) tuples
+                     for each exon belonging to the transcript. Coordinates are integers.
+            'introns': List[Tuple[int, int]] A list of (start, end) tuples
+                     for each intron between subsequent exons. Coordinates are integers.
+        fasta_path (str): path to FASTA file
+        output_path (str): path to output file
+        window_size (int): size of sequence to extract
+        buffer_size (int): size of buffer in intron window
+        num_samples (int): number of sequences to sample
+    """
+    samples_written = 0
+    with open(output_path, "w", encoding='utf-8') as f:
+        with pysam.FastaFile(fasta_path) as fasta:
+            transcript_ids = list(transcripts.keys())
+            random.shuffle(transcript_ids)
+            for transcript_id in transcript_ids:
+                if samples_written >= num_samples:
+                    break
+                transcript_data = transcripts[transcript_id]
+                seqid = transcript_data['info']['seqid']
+                introns = transcript_data.get('introns', [])
+                for intron_start, intron_end in introns:
+                    if samples_written >= num_samples:
+                        break
+                    safe_start = intron_start + buffer_size
+                    safe_end = intron_end - buffer_size
+                    if safe_start < safe_end and (safe_end - safe_start + 1) >= window_size:
+                        max_possible_start = safe_end - window_size + 1
+                        if safe_start <= max_possible_start:
+                            rand_coord = random.randint(safe_start, max_possible_start)
+                            win_start = rand_coord
+                            win_end = rand_coord + window_size - 1
+                            seq = extract_sequence(fasta, seqid, win_start, win_end)
+                            if seq:
+                                write_seq_to_file(seq, f)
+                                samples_written += 1
 
 
 def _parse_transcript_id(gtf_str: str) -> Dict[str, str]:
@@ -273,11 +368,11 @@ def get_window_coords(strand: str, junc_type: str, coord: int, n_exon: int, n_in
     return win_start, win_end
 
 
-def extract_sequence(fasta: str, seq_id: str, win_start: int, win_end: int) -> Optional[str]:
+def extract_sequence(fasta: pysam.FastaFile, seq_id: str, win_start: int, win_end: int) -> Optional[str]:
     """Obtain a sequence from an indexed FASTA file, given window coordinates.
 
     Args:
-        fasta (str): path to indexed fasta file
+        fasta (pysam.FastaFile): pysam FASTA object 
         seq_id (str): sequence ID for the desired sequence
         win_start (int): start coordinate (inclusive)
         win_end (int): end coordinate (inclusive)
@@ -292,15 +387,14 @@ def extract_sequence(fasta: str, seq_id: str, win_start: int, win_end: int) -> O
         if win_start > win_end:
             return ""
     seq = ""
-    with pysam.FastaFile(fasta) as f:  # pylint: disable=no-member
-        if seq_id not in f.references:
-            return ""
-        seq_len = f.get_reference_length(seq_id)
-        win_start = win_start - 1  # pysam takes 0-based coords
-        win_end = min(win_end, seq_len)
-        if win_start >= win_end:  # check after end is truncated also
-            return ""
-        seq = f.fetch(seq_id, win_start, win_end)
+    if seq_id not in fasta.references:
+        return ""
+    seq_len = fasta.get_reference_length(seq_id)
+    win_start = win_start - 1  # pysam takes 0-based coords
+    win_end = min(win_end, seq_len)
+    if win_start >= win_end:  # check after end is truncated also
+        return ""
+    seq = fasta.fetch(seq_id, win_start, win_end)
     return seq
 
 
