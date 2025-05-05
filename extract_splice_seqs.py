@@ -207,6 +207,40 @@ def get_splice_junctions(transcripts: Dict[str, Dict[str, Any]]) -> List[Dict[st
     return junctions
 
 
+def get_intron_coords(transcripts: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Find the intron coordinates between all exons in the transcripts.
+
+    Args:
+        transcripts (Dict[str, Dict[str, Any]]): A dictionary where keys are transcript IDs.
+        Each value is another dictionary with two keys:
+            'info': {'seqid': str, 'strand': str} - Chromosome/contig and strand.
+            'exons': List[Tuple[int, int]] - A list of (start, end) tuples
+                     for each exon belonging to the transcript. Coordinates are integers.}
+
+    Returns:
+        Dict[str, Dict[str, Any]]: A dictionary where keys are transcript IDs.
+        Each value is another dictionary with three keys:
+            'info': {'seqid': str, 'strand': str} - Chromosome/contig and strand.
+            'exons': List[Tuple[int, int]] - A list of (start, end) tuples
+                     for each exon belonging to the transcript. Coordinates are integers.
+            'introns': List[Tuple[int, int]] - A list of (start, end) tuples
+                     for each intron between the defined exons. Coordinates are integers.
+    """
+    for transcript_id in transcripts:
+        introns = []
+        exons = transcripts[transcript_id]['exons']
+        if len(exons) > 1:  # need 2 exons to define the intron between them
+            for i in range(len(exons) - 1):
+                exon1 = exons[i]
+                exon2 = exons[i + 1]
+                intron_start = exon1[1] + 1  # start of intron is 1 + end of exon
+                intron_end = exon2[0] - 1  # end of intron is the start of next exon - 1
+                if intron_start <= intron_end:
+                    introns.append((intron_start, intron_end))
+        transcripts[transcript_id]['introns'] = introns
+    return transcripts
+
+
 def get_window_coords(strand: str, junc_type: str, coord: int, n_exon: int, n_intron: int) -> Tuple:
     """Obtains the window coordinates for a sequence, given a known splice site junction coordinate
     and pre-defined window lengths in exon and intron regions.
