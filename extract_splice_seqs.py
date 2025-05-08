@@ -5,6 +5,7 @@ Contact: bambha.m@northeastern.edu
 Description: A Python script for obtaining true positive and false positive
 sequences around splice sites in protists to be used for downstream model training.
 """
+# pylint: disable=no-member
 import argparse
 from collections import defaultdict
 from typing import Dict, List, Tuple, Any, Optional, TextIO
@@ -36,7 +37,7 @@ def main() -> None:
                              count)  # sample the same number of (-) samples
 
 
-def get_cli_args():
+def get_cli_args() -> argparse.Namespace:
     """
     Parse command line args: gtf, fasta, N_exon, N_intron
 
@@ -241,64 +242,39 @@ def get_splice_junctions(transcripts: Dict[str, Dict[str, Any]]) -> List[Dict[st
           is a splice junction. Each junction is a dictionary with 5 keys:
             {'id': str, 'seqid': str, 'coord': int, 'strand': str, 'type': str}
     """
+    def _add_junction_entry(
+        transcript_id_val: str,
+        seqid_val: str,
+        strand_val: str,
+        coord_val: int,
+        junction_type_val: str,
+        exon_index: int
+    ) -> None:
+        junctions.append({
+            'id': f"{transcript_id_val}_{junction_type_val}_{exon_index}",
+            'seqid': seqid_val,
+            'coord': coord_val,
+            'strand': strand_val,  # The strand of the junction is the transcript's strand
+            'type': junction_type_val
+        })
     junctions = []
-    for transcript_id in transcripts:
-        transcript = transcripts[transcript_id]
-        exons = transcript['exons']
+    for transcript_id, transcript_data in transcripts.items():
+        transcript_info = transcript_data['info']
+        exons = transcript_data['exons']
         # sort exons by the start coordinates
         exons_sorted = sorted(exons, key=lambda exon: exon[0])
-        strand = transcript["info"]["strand"]
-        seqid = transcript["info"]["seqid"]
-
-        if len(exons_sorted) > 1:
-            for i, exon in enumerate(exons_sorted):
-                # exon is a tuple as (start, end)
-                start = exon[0]
-                end = exon[1]
-                if i > 0:
-                    acceptor_coord = None
-                    if strand == "+":
-                        # acceptor is at the start of the current exon
-                        acceptor_coord = start
-                        junctions.append({
-                            'id': f"{transcript_id}_acceptor_{i}",  # index refers to preceding exon
-                            'seqid': seqid,
-                            'coord': acceptor_coord,
-                            'strand': '+',
-                            'type': 'acceptor'
-                        })
-                    elif strand == "-":
-                        # acceptor is at the end of the current exon
-                        acceptor_coord = end
-                        junctions.append({
-                            'id': f"{transcript_id}_acceptor_{i}",
-                            'seqid': seqid,
-                            'coord': acceptor_coord,
-                            'strand': '-',
-                            'type': 'acceptor'
-                        })
-                if i < len(exons_sorted) - 1:
-                    donor_coord = None
-                    if strand == "+":
-                        # donor is at the end of the current exon
-                        donor_coord = end
-                        junctions.append({
-                            'id': f"{transcript_id}_donor_{i}",  # index refers to following exon
-                            'seqid': seqid,
-                            'coord': donor_coord,
-                            'strand': '+',
-                            'type': 'donor'
-                        })
-                    elif strand == "-":
-                        # donor is at the start of the current exon
-                        donor_coord = start
-                        junctions.append({
-                            'id': f"{transcript_id}_donor_{i}",
-                            'seqid': seqid,
-                            'coord': donor_coord,
-                            'strand': '-',
-                            'type': 'donor'
-                        })
+        if len(exons_sorted) <= 1:
+            continue
+        seqid = transcript_info['seqid']
+        strand = transcript_info['strand']
+        for i, exon_coords in enumerate(exons_sorted):
+            exon_start, exon_end = exon_coords
+            if i > 0:
+                acceptor_coord = exon_start if strand == "+" else exon_end
+                _add_junction_entry(transcript_id, seqid, strand, acceptor_coord, 'acceptor', i)
+            if i < len(exons_sorted) - 1:
+                donor_coord = exon_end if strand == "+" else exon_start
+                _add_junction_entry(transcript_id, seqid, strand, donor_coord, 'donor', i)
     return junctions
 
 
@@ -368,11 +344,12 @@ def get_window_coords(strand: str, junc_type: str, coord: int, n_exon: int, n_in
     return win_start, win_end
 
 
-def extract_sequence(fasta: pysam.FastaFile, seq_id: str, win_start: int, win_end: int) -> Optional[str]:
+def extract_sequence(fasta: pysam.FastaFile, seq_id: str,
+                     win_start: int, win_end: int) -> Optional[str]:
     """Obtain a sequence from an indexed FASTA file, given window coordinates.
 
     Args:
-        fasta (pysam.FastaFile): pysam FASTA object 
+        fasta (pysam.FastaFile): pysam FASTA object
         seq_id (str): sequence ID for the desired sequence
         win_start (int): start coordinate (inclusive)
         win_end (int): end coordinate (inclusive)
@@ -409,4 +386,5 @@ def write_seq_to_file(seq: str, f: TextIO) -> None:
         f.write(f"{seq}\n")
 
 
-main()
+if __name__ == "__main__":
+    main()
