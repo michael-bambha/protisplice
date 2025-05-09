@@ -1,0 +1,97 @@
+# test_cases_parse_transcript_id.yaml
+- test_id: "basic_single_attribute"
+  input_string: 'gene_id "GENE001";'
+  expected_attributes:
+    gene_id: "GENE001"
+
+- test_id: "basic_multiple_attributes"
+  input_string: 'gene_id "GENE002"; transcript_id "TRANS002";'
+  expected_attributes:
+    gene_id: "GENE002"
+    transcript_id: "TRANS002"
+
+- test_id: "extra_whitespace_around_semicolon"
+  input_string: 'gene_id "GENE003"  ;   transcript_id "TRANS003" ;'
+  expected_attributes:
+    gene_id: "GENE003"
+    transcript_id: "TRANS003"
+
+- test_id: "extra_whitespace_within_parts"
+  input_string: '  gene_id   "GENE004"  ; transcript_id  "TRANS004"  ;'
+  expected_attributes:
+    gene_id: "GENE004"
+    transcript_id: "TRANS004"
+
+- test_id: "trailing_semicolon"
+  input_string: 'gene_id "GENE005"; '
+  expected_attributes:
+    gene_id: "GENE005"
+
+- test_id: "leading_whitespace_overall"
+  input_string: '  gene_id "GENE006"; transcript_id "TRANS006";'
+  expected_attributes:
+    gene_id: "GENE006"
+    transcript_id: "TRANS006"
+
+- test_id: "empty_string"
+  input_string: ""
+  expected_attributes: {}
+
+- test_id: "string_with_only_whitespace"
+  input_string: "   "
+  expected_attributes: {}
+
+- test_id: "string_with_only_semicolons"
+  input_string: ";;;"
+  expected_attributes: {}
+
+- test_id: "mixed_valid_and_malformed_parts_no_quotes"
+  input_string: 'gene_id "GENE007"; malformed_key value_without_quotes; transcript_id "TRANS007";'
+  expected_attributes:
+    gene_id: "GENE007"
+    transcript_id: "TRANS007"
+
+- test_id: "mixed_valid_and_malformed_parts_empty_quotes"
+  input_string: 'gene_id "GENE008"; empty_val ""; note "Valid note";'
+  expected_attributes:
+    gene_id: "GENE008"
+    note: "Valid note"
+
+- test_id: "key_with_special_chars_non_whitespace"
+  input_string: 'gene-name.v1 "MyGene";'
+  expected_attributes:
+    gene-name.v1: "MyGene"
+
+- test_id: "value_with_spaces_and_symbols_within_quotes"
+  input_string: 'description "This is a gene (version 1.0)";'
+  expected_attributes:
+    description: "This is a gene (version 1.0)"
+
+- test_id: "no_trailing_semicolon_last_attribute"
+  input_string: 'gene_id "GENE009"; transcript_id "TRANS009"'
+  expected_attributes:
+    gene_id: "GENE009"
+    transcript_id: "TRANS009" # Assuming split by ";" and then regex match on each part
+
+- test_id: "malformed_no_value_after_key"
+  input_string: 'gene_id ; transcript_id "TRANS010";'
+  expected_attributes: # gene_id part will not match the regex
+    transcript_id: "TRANS010"
+
+- test_id: "malformed_only_key_no_quotes"
+  input_string: 'gene_id ; transcript_id VALUE_NO_QUOTES;'
+  expected_attributes: {} # Neither part will match the regex
+
+- test_id: "attribute_without_space_before_value"
+  input_string: 'key"value";' # This should not match the current regex r'\s*(\S+)\s+"([^"]+)"\s*'
+  expected_attributes: {}
+
+- test_id: "attribute_with_space_in_key_should_not_match_key"
+  input_string: 'gene id "GENE011";' # "gene id" is not \S+
+  expected_attributes: {}
+
+- test_id: "double_semicolon_between_attributes"
+  input_string: 'gene_id "GENE012";;transcript_id "TRANS012";'
+  expected_attributes: # The filter(None, ...) should handle the empty string from split
+    gene_id: "GENE012"
+    transcript_id: "TRANS012"

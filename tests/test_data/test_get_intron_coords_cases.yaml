@@ -1,0 +1,176 @@
+# test_cases_intron_coords.yaml
+- test_id: "no_transcripts"
+  input_transcripts: {}
+  expected_output: {}
+
+- test_id: "single_transcript_single_exon"
+  input_transcripts:
+    "T1":
+      info:
+        seqid: "chr1"
+        strand: "+"
+      exons:
+        - [100, 200] # [start, end]
+  expected_output:
+    "T1":
+      info:
+        seqid: "chr1"
+        strand: "+"
+      exons:
+        - [100, 200]
+      introns: []
+
+- test_id: "single_transcript_two_exons_one_intron"
+  input_transcripts:
+    "T2":
+      info:
+        seqid: "chr1"
+        strand: "+"
+      exons: # Assumed to be sorted by start coordinate
+        - [100, 200]
+        - [300, 400]
+  expected_output:
+    "T2":
+      info:
+        seqid: "chr1"
+        strand: "+"
+      exons:
+        - [100, 200]
+        - [300, 400]
+      introns:
+        - [201, 299] # intron_start = 200+1, intron_end = 300-1
+
+- test_id: "single_transcript_three_exons_two_introns"
+  input_transcripts:
+    "T3":
+      info:
+        seqid: "chr2"
+        strand: "-"
+      exons: # Assumed to be sorted
+        - [1000, 1100]
+        - [1200, 1300]
+        - [1400, 1500]
+  expected_output:
+    "T3":
+      info:
+        seqid: "chr2"
+        strand: "-"
+      exons:
+        - [1000, 1100]
+        - [1200, 1300]
+        - [1400, 1500]
+      introns:
+        - [1101, 1199]
+        - [1301, 1399]
+
+- test_id: "single_transcript_exons_no_space_for_intron"
+  input_transcripts:
+    "T4":
+      info:
+        seqid: "chr3"
+        strand: "+"
+      exons:
+        - [50, 100]
+        - [101, 150] # Intron would be [101, 100], so invalid
+  expected_output:
+    "T4":
+      info:
+        seqid: "chr3"
+        strand: "+"
+      exons:
+        - [50, 100]
+        - [101, 150]
+      introns: []
+
+- test_id: "single_transcript_exons_overlapping_no_intron"
+  input_transcripts:
+    "T5":
+      info:
+        seqid: "chr3"
+        strand: "+"
+      exons:
+        - [50, 120] # Exon 1 ends after Exon 2 starts
+        - [100, 150] # Intron would be [121, 99], so invalid
+  expected_output:
+    "T5":
+      info:
+        seqid: "chr3"
+        strand: "+"
+      exons:
+        - [50, 120]
+        - [100, 150]
+      introns: [] # No valid intron if exons are processed in this order
+
+- test_id: "multiple_transcripts_varied_introns"
+  input_transcripts:
+    "TransA":
+      info:
+        seqid: "chrX"
+        strand: "+"
+      exons:
+        - [10, 20]
+        - [30, 40]
+        - [50, 60]
+    "TransB_no_introns":
+      info:
+        seqid: "chrX"
+        strand: "-"
+      exons:
+        - [100, 200]
+    "TransC_one_intron":
+      info:
+        seqid: "chrY"
+        strand: "+"
+      exons:
+        - [1000, 1100]
+        - [1150, 1200]
+  expected_output:
+    "TransA":
+      info:
+        seqid: "chrX"
+        strand: "+"
+      exons:
+        - [10, 20]
+        - [30, 40]
+        - [50, 60]
+      introns:
+        - [21, 29]
+        - [41, 49]
+    "TransB_no_introns":
+      info:
+        seqid: "chrX"
+        strand: "-"
+      exons:
+        - [100, 200]
+      introns: []
+    "TransC_one_intron":
+      info:
+        seqid: "chrY"
+        strand: "+"
+      exons:
+        - [1000, 1100]
+        - [1150, 1200]
+      introns:
+        - [1101, 1149]
+
+- test_id: "transcript_with_unsorted_exons_behavior"
+  # Note: get_intron_coords does NOT sort exons.
+  # Introns are calculated based on the given order.
+  input_transcripts:
+    "T_unsorted":
+      info:
+        seqid: "chrZ"
+        strand: "+"
+      exons:
+        - [500, 600] # Exon 1 in list
+        - [100, 200] # Exon 2 in list
+  expected_output:
+    "T_unsorted":
+      info:
+        seqid: "chrZ"
+        strand: "+"
+      exons:
+        - [500, 600]
+        - [100, 200]
+      introns: # Calculated between (500,600) and (100,200) -> (601, 99) -> invalid
+        []

@@ -14,6 +14,8 @@ This script was originally built as a data mining tool for downstream ML workflo
 * python 3.6 or higher
 * `pysam`: library for processing common bioinformatics data types.
 * `samtools`: for indexing FASTA files
+* `pyyaml`: for loading YAML files containing test data
+* `pytest`: for running the tests
 
 ## Installation
 
