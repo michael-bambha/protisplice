@@ -1,3 +1,7 @@
+"""
+Functions for loading in test data from YAML
+"""
+
 import pytest
 import yaml
 
@@ -5,106 +9,104 @@ import yaml
 def load_gtf_test_cases_yaml(path):
     """Loads test cases from a YAML file."""
     test_cases = []
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         all_data = yaml.safe_load(f)
         for data in all_data:
             test_id = data.get("id", data["input_string"][:30])
-            test_cases.append(pytest.param(data["input_string"], data["expected_attributes"], id=test_id))
+            test_cases.append(
+                pytest.param(
+                    data["input_string"], data["expected_attributes"], id=test_id
+                )
+            )
     return test_cases
 
 
 def load_grpexons_cases(path):
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         cases = yaml.safe_load(f)
     test_cases = []
     for case in cases:
-        test_id = case['test_id']
-        gtf_content = case.get('gtf_content', '')
-        expected_output = case['expected_output']
-        for transcript_id, data in expected_output.items():
-            if 'exons' in data and isinstance(data['exons'], list):  # convert list of lists to list of tuples
-                data['exons'] = [tuple(exon) for exon in data['exons']]
-        test_cases.append(
-            pytest.param(gtf_content, expected_output, id=test_id)
-        )
+        test_id = case["test_id"]
+        gtf_content = case.get("gtf_content", "")
+        expected_output = case["expected_output"]
+        for _, data in expected_output.items():
+            if "exons" in data and isinstance(
+                data["exons"], list
+            ):  # convert list of lists to list of tuples
+                data["exons"] = [tuple(exon) for exon in data["exons"]]
+        test_cases.append(pytest.param(gtf_content, expected_output, id=test_id))
     return test_cases
 
 
 def load_splicejxn_cases(path):
-    with open(path, "r", encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         cases = yaml.safe_load(f)
     test_cases = []
     for case in cases:
-        test_id = case['test_id']
-        input_transcripts_raw = case.get('input_transcripts', {})
-        expected_junctions = case.get('expected_junctions', [])
+        test_id = case["test_id"]
+        input_transcripts_raw = case.get("input_transcripts", {})
+        expected_junctions = case.get("expected_junctions", [])
         input_transcripts_processed = {}
         for transcript_id, data in input_transcripts_raw.items():
             processed_exons = []
-            if 'exons' in data and isinstance(data['exons'], list):
-                for exon_coords in data['exons']:
+            if "exons" in data and isinstance(data["exons"], list):
+                for exon_coords in data["exons"]:
                     if isinstance(exon_coords, list) and len(exon_coords) == 2:
                         processed_exons.append(tuple(exon_coords))
             input_transcripts_processed[transcript_id] = {
-                'info': data.get('info', {}),
-                'exons': processed_exons
+                "info": data.get("info", {}),
+                "exons": processed_exons,
             }
         test_cases.append(
-            pytest.param(
-                input_transcripts_processed,
-                expected_junctions,
-                id=test_id
-            )
+            pytest.param(input_transcripts_processed, expected_junctions, id=test_id)
         )
     return test_cases
 
 
 def load_intron_coords_cases(path):
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         cases = yaml.safe_load(f)
     test_cases = []
 
     for case in cases:
-        test_id = case.get('test_id', 'unnamed_intron_test')
-        input_transcripts_raw = case.get('input_transcripts', {})
-        expected_output_raw = case.get('expected_output', {})
+        test_id = case.get("test_id", "unnamed_intron_test")
+        input_transcripts_raw = case.get("input_transcripts", {})
+        expected_output_raw = case.get("expected_output", {})
         input_transcripts_processed = {}
 
         for transcript_id, data in input_transcripts_raw.items():
             processed_exons_input = []
-            if 'exons' in data and isinstance(data['exons'], list):
-                for exon_coords in data['exons']:
+            if "exons" in data and isinstance(data["exons"], list):
+                for exon_coords in data["exons"]:
                     if isinstance(exon_coords, list) and len(exon_coords) == 2:
                         processed_exons_input.append(tuple(exon_coords))
             input_transcripts_processed[transcript_id] = {
-                'info': data.get('info', {}),
-                'exons': processed_exons_input
+                "info": data.get("info", {}),
+                "exons": processed_exons_input,
             }
 
         expected_output_processed = {}
         for transcript_id, data in expected_output_raw.items():
             processed_exons_expected = []
-            if 'exons' in data and isinstance(data['exons'], list):
-                for exon_coords in data['exons']:
+            if "exons" in data and isinstance(data["exons"], list):
+                for exon_coords in data["exons"]:
                     if isinstance(exon_coords, list) and len(exon_coords) == 2:
                         processed_exons_expected.append(tuple(exon_coords))
             processed_introns_expected = []
-            if 'introns' in data and isinstance(data['introns'], list):
-                for intron_coords in data['introns']:
+            if "introns" in data and isinstance(data["introns"], list):
+                for intron_coords in data["introns"]:
                     if isinstance(intron_coords, list) and len(intron_coords) == 2:
                         processed_introns_expected.append(tuple(intron_coords))
 
             expected_output_processed[transcript_id] = {
-                'info': data.get('info', {}),
-                'exons': processed_exons_expected,
-                'introns': processed_introns_expected
+                "info": data.get("info", {}),
+                "exons": processed_exons_expected,
+                "introns": processed_introns_expected,
             }
 
         test_cases.append(
             pytest.param(
-                input_transcripts_processed,
-                expected_output_processed,
-                id=test_id
+                input_transcripts_processed, expected_output_processed, id=test_id
             )
         )
     return test_cases
@@ -123,18 +125,18 @@ def load_window_coords_cases(path):
                    and the expected_window tuple, plus a test_id.
                    Returns an empty list if the file is not found or is empty.
     """
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         raw_test_cases = yaml.safe_load(f)
     test_cases = []
     for case in raw_test_cases:
-        test_id = case.get('test_id', 'unnamed_window_test')
-        inputs = case.get('inputs', {})
-        strand = inputs.get('strand')
-        junc_type = inputs.get('junc_type')
-        coord = inputs.get('coord')
-        n_exon = inputs.get('n_exon')
-        n_intron = inputs.get('n_intron')
-        expected_window_raw = case.get('expected_window')
+        test_id = case.get("test_id", "unnamed_window_test")
+        inputs = case.get("inputs", {})
+        strand = inputs.get("strand")
+        junc_type = inputs.get("junc_type")
+        coord = inputs.get("coord")
+        n_exon = inputs.get("n_exon")
+        n_intron = inputs.get("n_intron")
+        expected_window_raw = case.get("expected_window")
         expected_window_tuple = None  # null is None when loaded w/ PyYAML
         if isinstance(expected_window_raw, list) and len(expected_window_raw) == 2:
             val1 = expected_window_raw[0]
@@ -151,7 +153,7 @@ def load_window_coords_cases(path):
                 n_exon,
                 n_intron,
                 expected_window_tuple,
-                id=test_id
+                id=test_id,
             )
         )
     return test_cases
@@ -171,28 +173,26 @@ def load_extract_seq_cases(path):
                    and a test_id.
                    Returns an empty list if the file is not found or is empty.
     """
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         cases = yaml.safe_load(f)
 
     test_cases = []
     for case in cases:
-        test_id = case.get('test_id')
-        inputs = case.get('inputs', {})
-        seq_id = inputs.get('seq_id')
-        win_start = inputs.get('win_start')
-        win_end = inputs.get('win_end')
+        test_id = case.get("test_id")
+        inputs = case.get("inputs", {})
+        seq_id = inputs.get("seq_id")
+        win_start = inputs.get("win_start")
+        win_end = inputs.get("win_end")
         # Default fasta_content to an empty string if null in YAML
-        fasta_content = inputs.get('fasta_content') if inputs.get('fasta_content') is not None else ""       
-        expected_sequence = case.get('expected_sequence')
+        fasta_content = (
+            inputs.get("fasta_content")
+            if inputs.get("fasta_content") is not None
+            else ""
+        )
+        expected_sequence = case.get("expected_sequence")
         test_cases.append(
             pytest.param(
-                seq_id,
-                win_start,
-                win_end,
-                fasta_content, 
-                expected_sequence,
-                id=test_id
+                seq_id, win_start, win_end, fasta_content, expected_sequence, id=test_id
             )
         )
     return test_cases
-

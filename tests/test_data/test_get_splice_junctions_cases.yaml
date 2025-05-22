@@ -1,4 +1,4 @@
-# test_cases_splice_junctions.yaml
+# test_get_splice_junctions_cases.yaml
 - test_id: "no_transcripts"
   input_transcripts: {}
   expected_junctions: []

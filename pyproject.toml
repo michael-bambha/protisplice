@@ -5,12 +5,18 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "protisplice"
 version = "0.1.0"
-# Add other metadata like authors, description, etc.
+description = "A ML model for determining splice sites in protists."
+authors = [
+    { name = "Michael Bambha", email = "bambha.m@northeastern.edu" }
+]
 readme = "README.md"
-# requires-python = ">=3.8" # Specify your Python version support
-# dependencies = [
-#     # "some_dependency",
-# ]
+requires.python = ">=3.7"
+dependencies = [
+    "pysam",
+    "biopython",
+    "pytest",
+    "pyyaml"
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
