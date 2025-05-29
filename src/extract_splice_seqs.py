@@ -10,6 +10,7 @@ sequences around splice sites in protists to be used for downstream model traini
 import argparse
 from collections import defaultdict
 from typing import Dict, List, Tuple, Any, Optional, TextIO
+import os
 import random
 import re
 import pysam
@@ -21,21 +22,24 @@ def main() -> None:
     Business logic
     """
     args = get_cli_args()
+    if not os.path.exists(f"{args.fasta}.fai"):
+        raise FileNotFoundError(
+            f"Missing FASTA index: {args.fasta}.fai. Run samtools faidx."
+        )
     transcripts = group_exons_by_transcript(args.gtf)
     junctions = get_splice_junctions(transcripts)
     count = extract_positive_samples(
-        junctions, args.fasta, args.out, args.n_exon, args.n_intron
+        junctions, args.fasta, args.out1, args.n_exon, args.n_intron
     )
     transcripts_with_introns = get_intron_coords(transcripts)
-
     extract_negative_samples(
         transcripts_with_introns,
         args.fasta,
-        "seqs_negative.fa",
+        args.out2,
         args.n_exon + args.n_intron,  # make equal length to (+) seqs
         args.buffer,
         count,
-    )  # sample the same number of (-) samples
+    )  # sample the same number of (-) samples, if possible
 
 
 def get_cli_args() -> argparse.Namespace:
@@ -62,15 +66,24 @@ def get_cli_args() -> argparse.Namespace:
         required=True,
         type=str,
         metavar="FILE_PATH",
-        help="Path to input FASTA index file (.fai) indexed by samtools faidx.",
+        help="Path to input FASTA file. Corresponding .fai must also exist.",
     )
     parser.add_argument(
-        "-o",
-        "--out",
+        "-o1",
+        "--out1",
         required=True,
         type=str,
         metavar="FILE_PATH",
-        help="Path to output file.")
+        help="Path to output file for positive seqs.",
+    )
+    parser.add_argument(
+        "-o2",
+        "--out2",
+        required=True,
+        type=str,
+        metavar="FILE_PATH",
+        help="Path to output file for negative seqs",
+    )
     parser.add_argument(
         "-ne",
         "--n_exon",
@@ -137,7 +150,9 @@ def extract_positive_samples(
                             seq = str(
                                 Seq(seq).reverse_complement()
                             )  # get RC for (-) strands
-                        write_seq_to_file(seq, f)
+                        write_seq_to_file(
+                            seq, seqid, junc_type, strand, win_start, win_end, f
+                        )
                         count += 1
     return count
 
@@ -150,7 +165,8 @@ def extract_negative_samples(
     buffer_size: int,
     num_samples: int,
 ) -> None:
-    """Logic for obtaining negative samples.
+    """
+    Extracts negative sample sequences from intronic regions.
 
     Args:
         transcripts (Dict[str, Dict[str, Any]]): A dictionary where keys are transcript IDs.
@@ -176,6 +192,7 @@ def extract_negative_samples(
                     break
                 transcript_data = transcripts[transcript_id]
                 seqid = transcript_data["info"]["seqid"]
+                strand = transcript_data["info"]["strand"]
                 introns = transcript_data.get("introns", [])
                 for intron_start, intron_end in introns:
                     if samples_written >= num_samples:
@@ -192,8 +209,12 @@ def extract_negative_samples(
                             win_start = rand_coord
                             win_end = rand_coord + window_size - 1
                             seq = extract_sequence(fasta, seqid, win_start, win_end)
+                            if strand == "-":
+                                seq = str(Seq(seq).reverse_complement())
                             if seq:
-                                write_seq_to_file(seq, f)
+                                write_seq_to_file(
+                                    seq, seqid, "intron", strand, win_start, win_end, f
+                                )
                                 samples_written += 1
 
 
@@ -410,15 +431,23 @@ def extract_sequence(
         return ""
     seq_len = fasta.get_reference_length(seq_id)
     # pysam takes 0-based exclusive coords; GTFs are 1-based inclusive
-    win_start = win_start - 1  
-    win_end = min(win_end, seq_len)
+    win_start = win_start - 1
+    win_end = min(win_end, seq_len)  # may want to just skip instead
     if win_start >= win_end:  # check after end is truncated also
         return ""
     seq = fasta.fetch(seq_id, win_start, win_end)
     return seq
 
 
-def write_seq_to_file(seq: str, f: TextIO) -> None:
+def write_seq_to_file(
+    seq: str,
+    seqid: str,
+    junc_type: str,
+    strand: str,
+    win_start: int,
+    win_end: int,
+    f: TextIO,
+) -> None:
     """Write sequences to a file.
 
     Args:
@@ -426,6 +455,7 @@ def write_seq_to_file(seq: str, f: TextIO) -> None:
         f (TextIO): Output file to write the seq
     """
     if seq:
+        f.write(f">{seqid}_{junc_type}_{strand}_{win_start}_{win_end}\n")
         f.write(f"{seq}\n")
 
 
