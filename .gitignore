@@ -180,3 +180,4 @@ cython_debug/
 *.gtf
 *.fai
 *.vscode
+*.gff3

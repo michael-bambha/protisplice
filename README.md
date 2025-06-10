@@ -2,10 +2,11 @@
 
 ## Description
 
-This script identifies splice junctions (donor and acceptor sites) from a gene annotation file (GTF format) and extracts the flanking genomic sequences from a corresponding reference genome (FASTA format). It calculates a window around each splice junction coordinate, defined by a specified number of bases into the exon and intron regions.
+This script identifies splice junctions (donor and acceptor sites) from a gene annotation file (GFF3 format) and extracts the flanking genomic sequences from a corresponding reference genome (FASTA format). It calculates a window around each splice junction coordinate, defined by a specified number of bases into the exon and intron regions.
 
 Strand information is taken into account when outputting the sequences. For sequences on the (-) strand,
-the reverse complement will be returned.
+the reverse complement will be returned. Additionally, intronic regions of the same window length are also
+extracted to serve as "decoy" samples.
 
 This script was originally built as a data mining tool for downstream ML workflows. 
 
@@ -16,6 +17,7 @@ This script was originally built as a data mining tool for downstream ML workflo
 * `samtools`: for indexing FASTA files
 * `pyyaml`: for loading YAML files containing test data
 * `pytest`: for running the tests
+* `biopython`: for FASTA I/O and reverse complement
 
 ## Installation
 
@@ -25,7 +27,7 @@ pysam can be installed via pip:
 pip install pysam
 ```
 
-A GTF annotation file and both a FASTA and indexed FASTA file are required to execute the script.
+A GFF3 annotation file and both a FASTA and indexed FASTA file are required to execute the script.
 
 To index a fasta file:
 
@@ -36,6 +38,6 @@ samtools faidx yourfile.fa
 ## Usage
 
 ```bash
-python3 splice_sites_protists.py --gtf <path-to-gtf> --fasta <path-to-fasta> --n_exon <bases> --n_intron <bases>
+python3 splice_sites_protists.py --gff <path-to-gff> --fasta <path-to-fasta> --n_exon <bases> --n_intron <bases>
 ```
 

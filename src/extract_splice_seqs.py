@@ -25,6 +25,8 @@ def main() -> None:
         raise FileNotFoundError(
             f"Missing FASTA index: {args.fasta}.fai. Run samtools faidx."
         )
+    if args.n_intron == 0 or args.n_exon == 0:
+        raise ValueError("n_intron and n_exon must be nonzero!")
     transcripts = group_exons_by_transcript(args.gff)
     junctions = get_splice_junctions(transcripts)
     count = extract_positive_samples(
@@ -140,7 +142,7 @@ def extract_positive_samples(
                 strand = junction["strand"]
                 junc_type = junction["type"]
                 win_start, win_end = get_window_coords(
-                    junc_type, coord, n_exon, n_intron
+                    strand, junc_type, coord, n_exon, n_intron
                 )
                 if win_start is not None and win_end is not None:
                     seq = extract_sequence(fasta, seqid, win_start, win_end)
@@ -181,6 +183,7 @@ def extract_negative_samples(
         buffer_size (int): size of buffer in intron window
         num_samples (int): number of sequences to sample
     """
+    random.seed(100)
     samples_written = 0
     with open(output_path, "w", encoding="utf-8") as f:
         with pysam.FastaFile(fasta_path) as fasta:
@@ -196,6 +199,8 @@ def extract_negative_samples(
                 for intron_start, intron_end in introns:
                     if samples_written >= num_samples:
                         break
+                    # define a "safe start" region
+                    # this makes sure we don't accidentally capture a splice jxn
                     safe_start = intron_start + buffer_size
                     safe_end = intron_end - buffer_size
                     if (
@@ -331,26 +336,34 @@ def get_splice_junctions(
     for transcript_id, transcript_data in transcripts.items():
         transcript_info = transcript_data["info"]
         exons = transcript_data["exons"]
-        # sort exons by the start coordinates
         exons_sorted = sorted(exons, key=lambda exon: exon[0])
-        if len(exons_sorted) <= 1:
-            continue
         seqid = transcript_info["seqid"]
         strand = transcript_info["strand"]
+
+        if len(exons_sorted) < 2:
+            continue
+
         for i, exon_coords in enumerate(exons_sorted):
             exon_start, exon_end = exon_coords
-            # Acceptor sites are at exon starts (except first exon)
-            if i > 0:
-                acceptor_coord = exon_start
+
+            if i > 0:  # Acceptor sites
+                if strand == "+":
+                    acceptor_coord = exon_start
+                elif strand == "-":
+                    acceptor_coord = exon_end
+
                 _add_junction_entry(
                     transcript_id, seqid, strand, acceptor_coord, "acceptor", i
                 )
-            # Donor sites are at exon ends (except last exon)
-            if i < len(exons_sorted) - 1:
-                donor_coord = exon_end
+            if i < len(exons_sorted) - 1:  # Donor sites
+                if strand == "+":
+                    donor_coord = exon_end
+                elif strand == "-":
+                    donor_coord = exon_start
                 _add_junction_entry(
                     transcript_id, seqid, strand, donor_coord, "donor", i
                 )
+
     return junctions
 
 
@@ -391,29 +404,37 @@ def get_intron_coords(
 
 
 def get_window_coords(
-    junc_type: str, coord: int, n_exon: int, n_intron: int
+    strand: int, junc_type: str, coord: int, n_exon: int, n_intron: int
 ) -> Tuple[Optional[int], Optional[int]]:
-    """Obtains the window coordinates for a sequence, given a known splice site junction coordinate
-    and pre-defined window lengths in exon and intron regions.
+    """Calculates window for a sequence
 
     Args:
-        junc_type (str): acceptor or donor
-        coord (int): splice junction coordinate
-        n_exon (int): number of bases to include in exon region.
-        n_intron (int): number of bases to include in intron region
+        junc_type (str): Donor or acceptor
+        coord (int): coordinate of splice junction
+        n_exon (int): Number of bases into exonic region
+        n_intron (int): Number of bases into intronic region
 
     Returns:
-        Tuple: Tuple of coordinates for the window(start, end)
+        Tuple[Optional[int], Optional[int]]: Start/end coords of the window
     """
     win_start, win_end = None, None
-    if junc_type == "donor":
-        # For donors: exon region upstream, intron region downstream
-        win_start = coord - n_exon + 1
-        win_end = coord + n_intron
-    elif junc_type == "acceptor":
-        # For acceptors: intron region upstream, exon region downstream
-        win_start = coord - n_intron
-        win_end = coord + n_exon - 1
+
+    if strand == "+":
+        if junc_type == "donor":
+            win_start = coord - n_exon + 2  # +2 solves an off-by-1 error
+            win_end = coord + n_intron + 1
+        elif junc_type == "acceptor":
+            win_start = coord - n_intron
+            win_end = coord + n_exon - 1
+
+    elif strand == "-":
+        if junc_type == "donor":
+            win_start = coord - n_intron - 1
+            win_end = coord + n_exon - 2
+        elif junc_type == "acceptor":
+            win_start = coord - n_exon + 3
+            win_end = coord + n_intron + 2
+
     return win_start, win_end
 
 
