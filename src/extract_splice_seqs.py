@@ -1,65 +1,540 @@
 """
-File: splice_sites_protists.py
+File: extract_splice_seqs.py
 Author: Michael Bambha
 Contact: bambha.m@northeastern.edu
 Description: A Python script for obtaining true positive and false positive
-sequences around splice sites in protists to be used for downstream model training.
+sequences around splice sites to be used for downstream model training.
 """
 
 # pylint: disable=no-member
 import argparse
 from collections import defaultdict
-from typing import Dict, List, Tuple, Any, Optional, TextIO
-import os
+from dataclasses import dataclass
+from enum import Enum
+from typing import Dict, List, Tuple, Optional, TextIO
+import logging
+from pathlib import Path
 import random
 import pysam
 from Bio.Seq import Seq
 
 
-def main() -> None:
-    """
-    Business logic
-    """
-    args = get_cli_args()
-    if not os.path.exists(f"{args.fasta}.fai"):
-        raise FileNotFoundError(
-            f"Missing FASTA index: {args.fasta}.fai. Run samtools faidx."
+class StrandType(Enum):
+    """Enum for strand types (positive or negative)"""
+
+    POSITIVE = "+"
+    NEGATIVE = "-"
+
+
+class JunctionType(Enum):
+    """Enum for junction type (donor/acceptor/intron)"""
+
+    DONOR = "donor"
+    ACCEPTOR = "acceptor"
+    INTRON = "intron"
+
+
+@dataclass
+class SpliceJunction:
+    """Data class for splice junction info"""
+
+    id: str
+    seqid: str
+    coord: int
+    strand: StrandType
+    junction_type: JunctionType
+
+
+@dataclass
+class TranscriptInfo:
+    """Data class for transcript info"""
+
+    seqid: str
+    strand: StrandType
+
+
+@dataclass
+class Transcript:
+    """Data class for transcript with exons and introns"""
+
+    info: TranscriptInfo
+    exons: List[Tuple[int, int]]
+    introns: Optional[List[Tuple[int, int]]] = None
+
+
+@dataclass
+class ExtractionParams:
+    """Parameters for sequence extraction"""
+
+    n_exon: int = 40
+    n_intron: int = 80
+    buffer_size: int = 50
+
+
+@dataclass
+class NegativeSamplingContext:
+    """Context for negative sample extraction"""
+
+    file: TextIO
+    fasta: pysam.FastaFile
+    window_size: int
+    remaining_samples: int
+    samples_written: int = 0
+
+
+@dataclass
+class IntronCoordinates:
+    """Intron coordinate information"""
+
+    start: int
+    end: int
+
+
+@dataclass
+class SequenceWindow:
+    """Sequence and its window coordinates"""
+
+    sequence: str
+    start: int
+    end: int
+
+
+class SpliceSeqExtractor:
+    """Main class for splice sequence extraction"""
+
+    def __init__(self, gff_path: str, fasta_path: str, params: ExtractionParams):
+        """Initialize with file paths and extraction parameters"""
+        self.gff_path = Path(gff_path)
+        self.fasta_path = Path(fasta_path)
+        self.params = params
+
+        self._validate_inputs()
+        logging.basicConfig(
+            level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
         )
-    if args.n_intron == 0 or args.n_exon == 0:
-        raise ValueError("n_intron and n_exon must be nonzero!")
-    transcripts = group_exons_by_transcript(args.gff)
-    junctions = get_splice_junctions(transcripts)
-    count = extract_positive_samples(
-        junctions, args.fasta, args.out1, args.n_exon, args.n_intron
-    )
-    transcripts_with_introns = get_intron_coords(transcripts)
-    extract_negative_samples(
-        transcripts_with_introns,
-        args.fasta,
-        args.out2,
-        args.n_exon + args.n_intron,  # make equal length to (+) seqs
-        args.buffer,
-        count,
-    )  # sample the same number of (-) samples, if possible
+        self.logger = logging.getLogger(__name__)
+
+    def _validate_inputs(self) -> None:
+        """Validate input files and parameters"""
+        if not self.fasta_path.exists():
+            raise FileNotFoundError(f"FASTA file not found: {self.fasta_path}")
+
+        fai_path = Path(f"{self.fasta_path}.fai")
+        if not fai_path.exists():
+            raise FileNotFoundError(
+                f"Fasta index {fai_path} not found. Run samtools faidx."
+            )
+
+        if not self.gff_path.exists():
+            raise FileNotFoundError(f"GFF3 file not found: {self.gff_path}")
+
+        if self.params.n_intron <= 0 or self.params.n_exon <= 0:
+            raise ValueError("n_intron and n_exon must be positive integers!")
+
+        if isinstance(self.params.n_exon, float) or isinstance(self.params.n_intron, float):
+            raise ValueError("n_intron and n_exon must be integers!")
+
+    def extract_sequences(
+        self, positive_output: str, negative_output: str
+    ) -> Tuple[int, int]:
+        """Extract positive and negative sequences"""
+        self.logger.info("Parsing transcripts from GFF file...")
+        transcripts = self._parse_transcripts()
+
+        self.logger.info("Identifying splice junctions...")
+        junctions = self._get_splice_junctions(transcripts)
+
+        self.logger.info("Extracting positive samples to %s...", positive_output)
+        positive_count = self._extract_positive_samples(junctions, positive_output)
+
+        self.logger.info("Finding intron coordinates...")
+        transcripts_with_introns = self._add_intron_coords(transcripts)
+
+        self.logger.info("Extracting negative samples to %s...", negative_output)
+        negative_count = self._extract_negative_samples(
+            transcripts_with_introns, negative_output, positive_count
+        )
+
+        self.logger.info(
+            "Extraction complete -- found %d positive samples and %d negative samples.",
+            positive_count,
+            negative_count,
+        )
+        return positive_count, negative_count
+
+    def get_sequence_stats(self) -> Dict[str, int]:
+        """Get statistics about sequences"""
+        window_size = self.params.n_exon + self.params.n_intron
+        return {
+            "window_size": window_size,
+            "exon_bases": self.params.n_exon,
+            "intron_bases": self.params.n_intron,
+            "buffer_size": self.params.buffer_size,
+        }
+
+    def _parse_transcripts(self) -> Dict[str, Transcript]:
+        """Parse GFF3 file to extract transcript information"""
+        transcripts = defaultdict(
+            lambda: Transcript(
+                info=TranscriptInfo(seqid="", strand=StrandType.POSITIVE), exons=[]
+            )
+        )
+
+        with open(self.gff_path, "r", encoding="utf-8") as file:
+            for line_num, line in enumerate(file, 1):
+                transcript_data = self._parse_gff_line(line, line_num)
+                if transcript_data:
+                    transcript_id, seqid, start, end, strand = transcript_data
+                    transcript = transcripts[transcript_id]
+                    transcript.exons.append((start, end))
+
+                    if not transcript.info.seqid:
+                        transcript.info.seqid = seqid
+                        transcript.info.strand = StrandType(strand)
+
+        return {
+            tid: transcript
+            for tid, transcript in transcripts.items()
+            if transcript.exons
+        }
+
+    def _parse_gff_line(self, line: str, line_num: int) -> Optional[Tuple]:
+        """Parse a single GFF line and return transcript data if valid"""
+        try:
+            if line.startswith("#") or not line.strip():
+                return None
+
+            fields = line.strip().split("\t")
+            if len(fields) < 9 or fields[2] != "exon":
+                return None
+
+            transcript_id = self._extract_transcript_id(fields[8])
+            if not transcript_id:
+                return None
+
+            seqid, start, end, strand = (
+                fields[0],
+                int(fields[3]),
+                int(fields[4]),
+                fields[6],
+            )
+            return transcript_id, seqid, start, end, strand
+
+        except (IndexError, ValueError) as error:
+            self.logger.warning("Skipping malformed line %d: %s", line_num, error)
+            return None
+
+    def _extract_transcript_id(self, gff_attributes: str) -> Optional[str]:
+        """Extract transcript ID from GFF3 attributes field"""
+        attrs = {}
+        for part in filter(None, gff_attributes.strip().split(";")):
+            if "=" in part:
+                key, value = part.split("=", 1)
+                attrs[key.strip()] = value.strip()
+
+        parent = attrs.get("Parent", "")
+        if parent.startswith("transcript:"):
+            return parent.replace("transcript:", "")
+        return attrs.get("transcript_id")
+
+    def _get_splice_junctions(
+        self, transcripts: Dict[str, Transcript]
+    ) -> List[SpliceJunction]:
+        """Get splice junction coordinates from transcripts"""
+        junctions = []
+
+        for transcript_id, transcript in transcripts.items():
+            if len(transcript.exons) < 2:
+                continue
+
+            sorted_exons = sorted(transcript.exons, key=lambda x: x[0])
+            junctions.extend(
+                self._create_junctions_for_transcript(
+                    transcript_id, transcript, sorted_exons
+                )
+            )
+
+        return junctions
+
+    def _create_junctions_for_transcript(
+        self,
+        transcript_id: str,
+        transcript: Transcript,
+        sorted_exons: List[Tuple[int, int]],
+    ) -> List[SpliceJunction]:
+        """Create junction objects for a single transcript"""
+        junctions = []
+
+        for i, (exon_start, exon_end) in enumerate(sorted_exons):
+            # Acceptor sites (except for first exon)
+            if i > 0:
+                coord = (
+                    exon_start
+                    if transcript.info.strand == StrandType.POSITIVE
+                    else exon_end
+                )
+                junctions.append(
+                    SpliceJunction(
+                        id=f"{transcript_id}_acceptor_{i}",
+                        seqid=transcript.info.seqid,
+                        coord=coord,
+                        strand=transcript.info.strand,
+                        junction_type=JunctionType.ACCEPTOR,
+                    )
+                )
+
+            # Donor sites (except for last exon)
+            if i < len(sorted_exons) - 1:
+                coord = (
+                    exon_end
+                    if transcript.info.strand == StrandType.POSITIVE
+                    else exon_start
+                )
+                junctions.append(
+                    SpliceJunction(
+                        id=f"{transcript_id}_donor_{i}",
+                        seqid=transcript.info.seqid,
+                        coord=coord,
+                        strand=transcript.info.strand,
+                        junction_type=JunctionType.DONOR,
+                    )
+                )
+
+        return junctions
+
+    def _get_window_coords(
+        self, junction: SpliceJunction
+    ) -> Tuple[Optional[int], Optional[int]]:
+        strand = junction.strand
+        junc_type = junction.junction_type
+        coord = junction.coord
+
+        if strand == StrandType.POSITIVE:
+            if junc_type == JunctionType.DONOR:
+                start = coord - self.params.n_exon + 1
+                end = coord + self.params.n_intron
+                return start, end
+
+            if junc_type == JunctionType.ACCEPTOR:
+                start = coord - self.params.n_intron
+                end = coord + self.params.n_exon - 1
+                return start, end
+
+        if strand == StrandType.NEGATIVE:
+            if junc_type == JunctionType.DONOR:
+                start = coord - self.params.n_intron
+                end = coord + self.params.n_exon - 1
+                return start, end
+
+            if junc_type == JunctionType.ACCEPTOR:
+                start = coord - self.params.n_exon + 1
+                end = coord + self.params.n_intron
+                return start, end
+
+        return None, None
+
+    def _extract_sequence(
+        self, fasta: pysam.FastaFile, seq_id: str, win_start: int, win_end: int
+    ) -> Optional[str]:
+        """Extract sequence from FASTA file with coordinate validation"""
+        if win_start > win_end or win_start < 1:
+            return None
+
+        if seq_id not in fasta.references:
+            return None
+
+        seq_len = fasta.get_reference_length(seq_id)
+        win_start_0based = max(0, win_start - 1)  # Convert to 0-based
+        win_end_0based = min(
+            win_end, seq_len
+        )  # Keep as 1-based since pysam end is exclusive
+
+        if win_start_0based >= win_end_0based:
+            return None
+
+        extracted = fasta.fetch(seq_id, win_start_0based, win_end_0based)
+        return extracted
+
+    def _extract_positive_samples(
+        self, junctions: List[SpliceJunction], output_path: str
+    ) -> int:
+        """Extract positive splice site sequences"""
+        count = 0
+
+        with open(output_path, "w", encoding="utf-8") as file:
+            with pysam.FastaFile(str(self.fasta_path)) as fasta:
+                for junction in junctions:
+                    count += self._process_junction(file, fasta, junction)
+
+        return count
+
+    def _process_junction(
+        self, file: TextIO, fasta: pysam.FastaFile, junction: SpliceJunction
+    ) -> int:
+        """Process a single junction and write to file if valid"""
+        win_start, win_end = self._get_window_coords(junction)
+
+        if win_start is None or win_end is None:
+            return 0
+
+        seq = self._extract_sequence(fasta, junction.seqid, win_start, win_end)
+        if not seq:
+            return 0
+
+        if junction.strand == StrandType.NEGATIVE:
+            seq = str(Seq(seq).reverse_complement())
+
+        seq_window = SequenceWindow(sequence=seq, start=win_start, end=win_end)
+
+        self._write_fasta_entry(file, junction, seq_window)
+        return 1
+
+    def _add_intron_coords(
+        self, transcripts: Dict[str, Transcript]
+    ) -> Dict[str, Transcript]:
+        """Add intron coordinates to transcript objects"""
+        for transcript in transcripts.values():
+            introns = []
+            sorted_exons = sorted(transcript.exons, key=lambda x: x[0])
+
+            for i in range(len(sorted_exons) - 1):
+                intron_start = sorted_exons[i][1] + 1
+                intron_end = sorted_exons[i + 1][0] - 1
+
+                if intron_start <= intron_end:
+                    introns.append((intron_start, intron_end))
+
+            transcript.introns = introns
+        return transcripts
+
+    def _extract_negative_samples(
+        self, transcripts: Dict[str, Transcript], output_path: str, target_count: int
+    ) -> int:
+        """Extract negative samples from intronic regions"""
+        random.seed(100)
+        samples_written = 0
+        window_size = self.params.n_exon + self.params.n_intron
+
+        with open(output_path, "w", encoding="utf-8") as file:
+            with pysam.FastaFile(str(self.fasta_path)) as fasta:
+                transcript_ids = list(transcripts.keys())
+                random.shuffle(transcript_ids)
+
+                for transcript_id in transcript_ids:
+                    if samples_written >= target_count:
+                        break
+
+                    context = NegativeSamplingContext(
+                        file=file,
+                        fasta=fasta,
+                        window_size=window_size,
+                        remaining_samples=target_count - samples_written,
+                        samples_written=samples_written,
+                    )
+
+                    extracted = self._extract_from_transcript(
+                        context, transcript_id, transcripts[transcript_id]
+                    )
+                    samples_written += extracted
+
+        return samples_written
+
+    def _extract_from_transcript(
+        self,
+        context: NegativeSamplingContext,
+        transcript_id: str,
+        transcript: Transcript,
+    ) -> int:
+        """Extract negative samples from a single transcript"""
+        if not transcript.introns:
+            return 0
+
+        samples_from_transcript = 0
+
+        for intron_start, intron_end in transcript.introns:
+            if samples_from_transcript >= context.remaining_samples:
+                break
+
+            intron_coords = IntronCoordinates(start=intron_start, end=intron_end)
+            sample_extracted = self._extract_from_intron(
+                context, transcript_id, transcript, intron_coords
+            )
+            samples_from_transcript += sample_extracted
+            context.samples_written += sample_extracted
+
+        return samples_from_transcript
+
+    def _extract_from_intron(
+        self,
+        context: NegativeSamplingContext,
+        transcript_id: str,
+        transcript: Transcript,
+        intron_coords: IntronCoordinates,
+    ) -> int:
+        """Extract one negative sample from an intron region"""
+        # Define safe extraction region (avoid splice sites)
+        safe_start = intron_coords.start + self.params.buffer_size
+        safe_end = intron_coords.end - self.params.buffer_size
+
+        if safe_end - safe_start + 1 < context.window_size:
+            return 0
+
+        # Random sampling within safe region
+        max_start = safe_end - context.window_size + 1
+        if safe_start > max_start:
+            return 0
+
+        rand_start = random.randint(safe_start, max_start)
+        rand_end = rand_start + context.window_size - 1
+
+        seq = self._extract_sequence(
+            context.fasta, transcript.info.seqid, rand_start, rand_end
+        )
+        if not seq:
+            return 0
+
+        # Apply reverse complement for negative strand
+        if transcript.info.strand == StrandType.NEGATIVE:
+            seq = str(Seq(seq).reverse_complement())
+
+        # Create pseudo-junction for consistent output format
+        pseudo_junction = SpliceJunction(
+            id=f"{transcript_id}_intron_{context.samples_written}",
+            seqid=transcript.info.seqid,
+            coord=rand_start,
+            strand=transcript.info.strand,
+            junction_type=JunctionType.INTRON,
+        )
+
+        seq_window = SequenceWindow(sequence=seq, start=rand_start, end=rand_end)
+        self._write_fasta_entry(context.file, pseudo_junction, seq_window)
+        return 1
+
+    def _write_fasta_entry(
+        self, file_handle: TextIO, junction: SpliceJunction, seq_window: SequenceWindow
+    ) -> None:
+        """Write a FASTA entry to file"""
+        header = (
+            f">{junction.seqid}_{junction.junction_type.value}_"
+            f"{junction.strand.value}_{seq_window.start}_{seq_window.end}"
+        )
+        file_handle.write(f"{header}\n{seq_window.sequence}\n")
 
 
 def get_cli_args() -> argparse.Namespace:
-    """
-    Parse command line args: gff, fasta, n_exon, n_intron
-
-    Returns:
-        argparse.Namespace: Parsed arguments
-    """
+    """Parse command line arguments"""
     parser = argparse.ArgumentParser(
-        description="Extract sequences around splice site junctions."
+        description="Extract sequences around splice site junctions.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+
     parser.add_argument(
         "-g",
         "--gff",
         required=True,
         type=str,
         metavar="FILE_PATH",
-        help="Path to input GFF3 file.",
+        help="Path to input GFF3 file",
     )
     parser.add_argument(
         "-f",
@@ -67,7 +542,7 @@ def get_cli_args() -> argparse.Namespace:
         required=True,
         type=str,
         metavar="FILE_PATH",
-        help="Path to input FASTA file. Corresponding .fai must also exist.",
+        help="Path to input FASTA file (must be indexed with samtools faidx)",
     )
     parser.add_argument(
         "-o1",
@@ -75,7 +550,7 @@ def get_cli_args() -> argparse.Namespace:
         required=True,
         type=str,
         metavar="FILE_PATH",
-        help="Path to output file for positive seqs.",
+        help="Path to output file for positive sequences",
     )
     parser.add_argument(
         "-o2",
@@ -83,7 +558,7 @@ def get_cli_args() -> argparse.Namespace:
         required=True,
         type=str,
         metavar="FILE_PATH",
-        help="Path to output file for negative seqs",
+        help="Path to output file for negative sequences",
     )
     parser.add_argument(
         "-ne",
@@ -91,7 +566,7 @@ def get_cli_args() -> argparse.Namespace:
         default=40,
         type=int,
         metavar="INT",
-        help="Number of bases to include in the exon region of the window.",
+        help="Number of bases to include from exon region",
     )
     parser.add_argument(
         "-ni",
@@ -99,7 +574,7 @@ def get_cli_args() -> argparse.Namespace:
         default=80,
         type=int,
         metavar="INT",
-        help="Number of bases to include in the intron region of the window",
+        help="Number of bases to include from intron region",
     )
     parser.add_argument(
         "-b",
@@ -107,396 +582,39 @@ def get_cli_args() -> argparse.Namespace:
         default=50,
         type=int,
         metavar="INT",
-        help="Buffer size for intron region",
+        help="Buffer size around splice sites for negative sampling",
     )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
+
     return parser.parse_args()
 
 
-def extract_positive_samples(
-    junctions: List[Dict[str, Any]],
-    fasta_path: str,
-    output_path: str,
-    n_exon: int,
-    n_intron: int,
-) -> int:
-    """Logic for obtaining true positives
+def main() -> None:
+    """Main entry point"""
+    args = get_cli_args()
 
-    Args:
-        junctions (List[Dict[str, Any]]): List of Dictionaries, where each element of the list
-            is a splice junction. Each junction is a dictionary with 5 keys:
-            {'id': str, 'seqid': str, 'coord': int, 'strand': str, 'type': str}
-        fasta_path (str): path to FASTA file
-        output_path (str): path to output file
-        n_exon (int): Number of bases to include in the exon region of the window.
-        n_intron (int): Number of bases to include in the intron region of the window.
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
 
-    Returns:
-        int: The number of samples written to the file.
-    """
-    count = 0
-    with open(output_path, "w", encoding="utf-8") as f:
-        with pysam.FastaFile(fasta_path) as fasta:
-            for junction in junctions:
-                seqid = junction["seqid"]
-                coord = junction["coord"]
-                strand = junction["strand"]
-                junc_type = junction["type"]
-                win_start, win_end = get_window_coords(
-                    strand, junc_type, coord, n_exon, n_intron
-                )
-                if win_start is not None and win_end is not None:
-                    seq = extract_sequence(fasta, seqid, win_start, win_end)
-                    if seq:
-                        if strand == "-":
-                            seq = str(
-                                Seq(seq).reverse_complement()
-                            )  # get RC for (-) strands
-                        write_seq_to_file(
-                            seq, seqid, junc_type, strand, win_start, win_end, f
-                        )
-                        count += 1
-    return count
+    params = ExtractionParams(
+        n_exon=args.n_exon, n_intron=args.n_intron, buffer_size=args.buffer
+    )
 
+    extractor = SpliceSeqExtractor(
+        gff_path=args.gff, fasta_path=args.fasta, params=params
+    )
 
-def extract_negative_samples(
-    transcripts: Dict[str, Dict[str, Any]],
-    fasta_path: str,
-    output_path: str,
-    window_size: int,
-    buffer_size: int,
-    num_samples: int,
-) -> None:
-    """
-    Extracts negative sample sequences from intronic regions.
-
-    Args:
-        transcripts (Dict[str, Dict[str, Any]]): A dictionary where keys are transcript IDs.
-        Each value is another dictionary with three keys:
-            'info': {'seqid': str, 'strand': str} - Chromosome/contig and strand.
-            'exons': List[Tuple[int, int]] - A list of (start, end) tuples
-                     for each exon belonging to the transcript. Coordinates are integers.
-            'introns': List[Tuple[int, int]] A list of (start, end) tuples
-                     for each intron between subsequent exons. Coordinates are integers.
-        fasta_path (str): path to FASTA file
-        output_path (str): path to output file
-        window_size (int): size of sequence to extract
-        buffer_size (int): size of buffer in intron window
-        num_samples (int): number of sequences to sample
-    """
-    random.seed(100)
-    samples_written = 0
-    with open(output_path, "w", encoding="utf-8") as f:
-        with pysam.FastaFile(fasta_path) as fasta:
-            transcript_ids = list(transcripts.keys())
-            random.shuffle(transcript_ids)
-            for transcript_id in transcript_ids:
-                if samples_written >= num_samples:
-                    break
-                transcript_data = transcripts[transcript_id]
-                seqid = transcript_data["info"]["seqid"]
-                strand = transcript_data["info"]["strand"]
-                introns = transcript_data.get("introns", [])
-                for intron_start, intron_end in introns:
-                    if samples_written >= num_samples:
-                        break
-                    # define a "safe start" region
-                    # this makes sure we don't accidentally capture a splice jxn
-                    safe_start = intron_start + buffer_size
-                    safe_end = intron_end - buffer_size
-                    if (
-                        safe_start < safe_end
-                        and (safe_end - safe_start + 1) >= window_size
-                    ):
-                        max_possible_start = safe_end - window_size + 1
-                        if safe_start <= max_possible_start:
-                            rand_coord = random.randint(safe_start, max_possible_start)
-                            win_start = rand_coord
-                            win_end = rand_coord + window_size - 1
-                            seq = extract_sequence(fasta, seqid, win_start, win_end)
-                            if seq:
-                                if strand == "-":
-                                    seq = str(Seq(seq).reverse_complement())
-                                write_seq_to_file(
-                                    seq, seqid, "intron", strand, win_start, win_end, f
-                                )
-                                samples_written += 1
-
-
-def _parse_transcript_id(gff_str: str) -> Dict[str, str]:
-    """Parse column 9 of a GFF3 file into a dictionary by separating k/v pairs
-    by semicolons.
-
-    Args:
-        gff_str (str): 9th column of a GFF3 file
-
-    Returns:
-        Dict[str, str]: Dictionary in the structure:
-            {"Parent": parent_id, "ID": feature_id, ...}
-    """
-    attrs = {}
-    for part in filter(None, gff_str.strip().split(";")):
-        if "=" in part:
-            k, v = part.split("=", 1)
-            attrs[k.strip()] = v.strip()
-    return attrs
-
-
-def group_exons_by_transcript(gff: str) -> Dict[str, Dict[str, Any]]:
-    """
-    Obtain all exons for a given transcript in a GFF3 annotation file.
-    Example line format (tab-delineated):
-
-    FR824046	ena	exon	1244	1570	.	-	.
-    Parent=transcript:CCA13858;Name=CCA13858-1;constitutive=1;ensembl_end_phase=0;
-    ensembl_phase=0;exon_id=CCA13858-1;rank=1
-
-    Args:
-        gff (str): GFF3 file of annotations
-
-    Returns:
-        transcripts (Dict[str, Dict[str, Any]]): A dictionary where keys are transcript IDs.
-        Each value is another dictionary with two keys:
-            'info': {'seqid': str, 'strand': str} - Chromosome/contig and strand.
-            'exons': List[Tuple[int, int]] - A list of (start, end) tuples
-                     for each exon belonging to the transcript. Coordinates are integers.
-    """
-    transcripts = defaultdict(lambda: {"info": {}, "exons": []})
-    with open(gff, "r", encoding="utf-8") as f:
-        for line in f:
-            # Skip comment lines and empty lines
-            if line.startswith("#") or not line.strip():
-                continue
-
-            fields = line.strip().split("\t")
-            if len(fields) < 9:  # GFF3 requires 9 columns
-                continue
-
-            try:
-                if fields[2] == "exon":
-                    attrs = _parse_transcript_id(fields[8])
-                    parent = attrs.get("Parent", "")
-                    if parent.startswith("transcript:"):
-                        transcript_id = parent.replace("transcript:", "")
-                    else:
-                        transcript_id = attrs.get("transcript_id")
-
-                    if transcript_id is None:
-                        continue
-
-                    seqid, start, end, strand = [fields[i] for i in [0, 3, 4, 6]]
-                    transcript_entry = transcripts[transcript_id]
-                    transcript_entry["exons"].append((int(start), int(end)))
-
-                    if "seqid" not in transcript_entry["info"]:
-                        transcript_entry["info"]["seqid"] = seqid
-                        transcript_entry["info"]["strand"] = strand
-            except (IndexError, ValueError):
-                continue
-
-    return transcripts
-
-
-def get_splice_junctions(
-    transcripts: Dict[str, Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    """Find coordinates (start/end) of splice junctions and whether
-      they are donor or acceptor regions.
-    Args:
-        transcripts (Dict[str, Dict[str, Any]]): A dictionary where keys are transcript IDs.
-        Each value is another dictionary with two keys:
-            'info': {'seqid': str, 'strand': str} - Chromosome/contig and strand.
-            'exons': List[Tuple[int, int]] - A list of (start, end) tuples
-                     for each exon belonging to the transcript. Coordinates are integers.
-
-    Returns:
-        List[Dict[str, Any]]: List of Dictionaries, where each element of the list
-          is a splice junction. Each junction is a dictionary with 5 keys:
-            {'id': str, 'seqid': str, 'coord': int, 'strand': str, 'type': str}
-    """
-
-    def _add_junction_entry(
-        transcript_id_val: str,
-        seqid_val: str,
-        strand_val: str,
-        coord_val: int,
-        junction_type_val: str,
-        exon_index: int,
-    ) -> None:
-        junctions.append(
-            {
-                "id": f"{transcript_id_val}_{junction_type_val}_{exon_index}",
-                "seqid": seqid_val,
-                "coord": coord_val,
-                "strand": strand_val,
-                "type": junction_type_val,
-            }
+    try:
+        pos_count, neg_count = extractor.extract_sequences(args.out1, args.out2)
+        print(
+            f"Successfully extracted {pos_count} positive and "
+            f"{neg_count} negative sequences"
         )
-
-    junctions = []
-    for transcript_id, transcript_data in transcripts.items():
-        transcript_info = transcript_data["info"]
-        exons = transcript_data["exons"]
-        exons_sorted = sorted(exons, key=lambda exon: exon[0])
-        seqid = transcript_info["seqid"]
-        strand = transcript_info["strand"]
-
-        if len(exons_sorted) < 2:
-            continue
-
-        for i, exon_coords in enumerate(exons_sorted):
-            exon_start, exon_end = exon_coords
-
-            if i > 0:  # Acceptor sites
-                if strand == "+":
-                    acceptor_coord = exon_start
-                elif strand == "-":
-                    acceptor_coord = exon_end
-
-                _add_junction_entry(
-                    transcript_id, seqid, strand, acceptor_coord, "acceptor", i
-                )
-            if i < len(exons_sorted) - 1:  # Donor sites
-                if strand == "+":
-                    donor_coord = exon_end
-                elif strand == "-":
-                    donor_coord = exon_start
-                _add_junction_entry(
-                    transcript_id, seqid, strand, donor_coord, "donor", i
-                )
-
-    return junctions
-
-
-def get_intron_coords(
-    transcripts: Dict[str, Dict[str, Any]],
-) -> Dict[str, Dict[str, Any]]:
-    """Find the intron coordinates between all exons in the transcripts.
-
-    Args:
-        transcripts (Dict[str, Dict[str, Any]]): A dictionary where keys are transcript IDs.
-        Each value is another dictionary with two keys:
-            'info': {'seqid': str, 'strand': str} - Chromosome/contig and strand.
-            'exons': List[Tuple[int, int]] - A list of (start, end) tuples
-                     for each exon belonging to the transcript. Coordinates are integers.
-
-    Returns:
-        Dict[str, Dict[str, Any]]: A dictionary where keys are transcript IDs.
-        Each value is another dictionary with three keys:
-            'info': {'seqid': str, 'strand': str} - Chromosome/contig and strand.
-            'exons': List[Tuple[int, int]] - A list of (start, end) tuples
-                     for each exon belonging to the transcript. Coordinates are integers.
-            'introns': List[Tuple[int, int]] - A list of (start, end) tuples
-                     for each intron between the defined exons. Coordinates are integers.
-    """
-    for transcript_id in transcripts:
-        introns = []
-        exons = sorted(transcripts[transcript_id]["exons"], key=lambda x: x[0])
-        if len(exons) > 1:  # need 2 exons to define the intron between them
-            for i in range(len(exons) - 1):
-                exon1 = exons[i]
-                exon2 = exons[i + 1]
-                intron_start = exon1[1] + 1  # start of intron is 1 + end of exon
-                intron_end = exon2[0] - 1  # end of intron is the start of next exon - 1
-                if intron_start <= intron_end:
-                    introns.append((intron_start, intron_end))
-        transcripts[transcript_id]["introns"] = introns
-    return transcripts
-
-
-def get_window_coords(
-    strand: int, junc_type: str, coord: int, n_exon: int, n_intron: int
-) -> Tuple[Optional[int], Optional[int]]:
-    """Calculates window for a sequence
-
-    Args:
-        junc_type (str): Donor or acceptor
-        coord (int): coordinate of splice junction
-        n_exon (int): Number of bases into exonic region
-        n_intron (int): Number of bases into intronic region
-
-    Returns:
-        Tuple[Optional[int], Optional[int]]: Start/end coords of the window
-    """
-    win_start, win_end = None, None
-
-    if strand == "+":
-        if junc_type == "donor":
-            win_start = coord - n_exon + 2  # +2 solves an off-by-1 error
-            win_end = coord + n_intron + 1
-        elif junc_type == "acceptor":
-            win_start = coord - n_intron
-            win_end = coord + n_exon - 1
-
-    elif strand == "-":
-        if junc_type == "donor":
-            win_start = coord - n_intron - 1
-            win_end = coord + n_exon - 2
-        elif junc_type == "acceptor":
-            win_start = coord - n_exon + 3
-            win_end = coord + n_intron + 2
-
-    return win_start, win_end
-
-
-def extract_sequence(
-    fasta: pysam.FastaFile, seq_id: str, win_start: int, win_end: int
-) -> Optional[str]:
-    """Obtain a sequence from an indexed FASTA file, given window coordinates.
-
-    Args:
-        fasta (pysam.FastaFile): pysam FASTA object
-        seq_id (str): sequence ID for the desired sequence
-        win_start (int): start coordinate (1-based inclusive)
-        win_end (int): end coordinate (1-based inclusive)
-
-    Returns:
-        Optional[str]: Sequence of the desired window, or None if invalid
-    """
-    if win_start > win_end:
-        return None
-    if win_start < 1:
-        win_start = 1
-        if win_start > win_end:
-            return None
-
-    if seq_id not in fasta.references:
-        return None
-
-    seq_len = fasta.get_reference_length(seq_id)
-    # Convert to 0-based coordinates for pysam
-    win_start_0based = win_start - 1
-    win_end_0based = min(win_end, seq_len)
-
-    if win_start_0based >= win_end_0based:
-        return None
-
-    seq = fasta.fetch(seq_id, win_start_0based, win_end_0based)
-    return seq if seq else None
-
-
-def write_seq_to_file(
-    seq: str,
-    seqid: str,
-    junc_type: str,
-    strand: str,
-    win_start: int,
-    win_end: int,
-    f: TextIO,
-) -> None:
-    """Write sequences to a file in FASTA format.
-
-    Args:
-        seq (str): sequence extracted from FASTA
-        seqid (str): sequence/chromosome ID
-        junc_type (str): type of junction (donor/acceptor/intron)
-        strand (str): strand information
-        win_start (int): window start coordinate
-        win_end (int): window end coordinate
-        f (TextIO): Output file handle
-    """
-    if seq:
-        f.write(f">{seqid}_{junc_type}_{strand}_{win_start}_{win_end}\n")
-        f.write(f"{seq}\n")
+    except Exception as error:
+        logging.error("Extraction failed: %s", error)
+        raise
 
 
 if __name__ == "__main__":
