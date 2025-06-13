@@ -45,6 +45,14 @@ class SpliceJunction:
     junction_type: JunctionType
 
 
+class TranscriptFilter(Enum):
+    """Enum for transcript filter"""
+
+    ALL = "all"
+    PROTEIN_CODING = "protein_coding"
+    EXPRESSED = "expressed"  # implement RNA-seq integration later
+
+
 @dataclass
 class TranscriptInfo:
     """Data class for transcript info"""
@@ -102,11 +110,18 @@ class SequenceWindow:
 class SpliceSeqExtractor:
     """Main class for splice sequence extraction"""
 
-    def __init__(self, gff_path: str, fasta_path: str, params: ExtractionParams):
+    def __init__(
+        self,
+        gff_path: str,
+        fasta_path: str,
+        params: ExtractionParams,
+        transcript_filter: str = "all",
+    ):
         """Initialize with file paths and extraction parameters"""
         self.gff_path = Path(gff_path)
         self.fasta_path = Path(fasta_path)
         self.params = params
+        self.transcript_filter = transcript_filter
 
         self._validate_inputs()
         logging.basicConfig(
@@ -131,7 +146,9 @@ class SpliceSeqExtractor:
         if self.params.n_intron <= 0 or self.params.n_exon <= 0:
             raise ValueError("n_intron and n_exon must be positive integers!")
 
-        if isinstance(self.params.n_exon, float) or isinstance(self.params.n_intron, float):
+        if isinstance(self.params.n_exon, float) or isinstance(
+            self.params.n_intron, float
+        ):
             raise ValueError("n_intron and n_exon must be integers!")
 
     def extract_sequences(
@@ -208,8 +225,16 @@ class SpliceSeqExtractor:
             if len(fields) < 9 or fields[2] != "exon":
                 return None
 
-            transcript_id = self._extract_transcript_id(fields[8])
+            attrs = self._extract_transcript_attributes(fields[8])
+            parent = attrs.get("Parent", "")
+            transcript_id = None
+            if parent.startswith("transcript:"):
+                transcript_id = parent.replace("transcript:", "")
+
             if not transcript_id:
+                return None
+
+            if not self._passes_filter(fields[8]):
                 return None
 
             seqid, start, end, strand = (
@@ -224,25 +249,37 @@ class SpliceSeqExtractor:
             self.logger.warning("Skipping malformed line %d: %s", line_num, error)
             return None
 
-    def _extract_transcript_id(self, gff_attributes: str) -> Optional[str]:
+    def _extract_transcript_attributes(self, gff_attributes: str) -> Dict[str, str]:
         """Extract transcript ID from GFF3 attributes field"""
         attrs = {}
         for part in filter(None, gff_attributes.strip().split(";")):
             if "=" in part:
                 key, value = part.split("=", 1)
                 attrs[key.strip()] = value.strip()
+        return attrs
 
-        parent = attrs.get("Parent", "")
-        if parent.startswith("transcript:"):
-            return parent.replace("transcript:", "")
-        return attrs.get("transcript_id")
+    def _passes_filter(self, gff_attributes: str) -> bool:
+        if self.transcript_filter == "all":
+            return True
+
+        attrs = self._extract_transcript_attributes(gff_attributes)
+
+        if self.transcript_filter == "protein_coding":
+            biotype = (
+                attrs.get("gene_biotype")
+                or attrs.get("transcript_biotype")
+                or attrs.get("biotype", "")
+            )
+            return biotype == "protein_coding"
+
+        return True
 
     def _get_splice_junctions(
         self, transcripts: Dict[str, Transcript]
     ) -> List[SpliceJunction]:
         """Get splice junction coordinates from transcripts"""
         junctions = []
-
+        # Need 2+ exons to have a defined junction
         for transcript_id, transcript in transcripts.items():
             if len(transcript.exons) < 2:
                 continue
@@ -381,6 +418,7 @@ class SpliceSeqExtractor:
         if not seq:
             return 0
 
+        # Get reverse complement for (-) seqs
         if junction.strand == StrandType.NEGATIVE:
             seq = str(Seq(seq).reverse_complement())
 
@@ -603,7 +641,7 @@ def main() -> None:
     )
 
     extractor = SpliceSeqExtractor(
-        gff_path=args.gff, fasta_path=args.fasta, params=params
+        gff_path=args.gff, fasta_path=args.fasta, params=params, transcript_filter="all"
     )
 
     try:
