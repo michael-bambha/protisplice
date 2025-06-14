@@ -191,6 +191,11 @@ class SpliceSeqExtractor:
 
     def _parse_transcripts(self) -> Dict[str, Transcript]:
         """Parse GFF3 file to extract transcript information"""
+        transcript_biotypes = {}
+        if self.transcript_filter != all:
+            transcript_biotypes = self._collect_transcript_biotypes()
+            self.logger.info(f"Found {len(transcript_biotypes)} transcripts with biotype info")
+
         transcripts = defaultdict(
             lambda: Transcript(
                 info=TranscriptInfo(seqid="", strand=StrandType.POSITIVE), exons=[]
@@ -199,7 +204,7 @@ class SpliceSeqExtractor:
 
         with open(self.gff_path, "r", encoding="utf-8") as file:
             for line_num, line in enumerate(file, 1):
-                transcript_data = self._parse_gff_line(line, line_num)
+                transcript_data = self._parse_gff_line(line, line_num, transcript_biotypes)
                 if transcript_data:
                     transcript_id, seqid, start, end, strand = transcript_data
                     transcript = transcripts[transcript_id]
@@ -215,7 +220,7 @@ class SpliceSeqExtractor:
             if transcript.exons
         }
 
-    def _parse_gff_line(self, line: str, line_num: int) -> Optional[Tuple]:
+    def _parse_gff_line(self, line: str, line_num: int, transcript_biotypes: Dict[str, str]) -> Optional[Tuple]:
         """Parse a single GFF line and return transcript data if valid"""
         try:
             if line.startswith("#") or not line.strip():
@@ -234,7 +239,7 @@ class SpliceSeqExtractor:
             if not transcript_id:
                 return None
 
-            if not self._passes_filter(fields[8]):
+            if transcript_biotypes is not None and not self._passes_filter(transcript_id, transcript_biotypes):
                 return None
 
             seqid, start, end, strand = (
@@ -249,6 +254,29 @@ class SpliceSeqExtractor:
             self.logger.warning("Skipping malformed line %d: %s", line_num, error)
             return None
 
+    def _collect_transcript_biotypes(self) -> Dict[str, str]:
+        """Collect transcript biotype information from mRNA lines"""
+        transcript_biotypes = {}
+        
+        with open(self.gff_path, "r", encoding="utf-8") as file:
+            for line in file:
+                if line.startswith("#") or not line.strip():
+                    continue
+                    
+                fields = line.strip().split("\t")
+                if len(fields) < 9 or fields[2] != "mRNA":
+                    continue
+                    
+                attrs = self._extract_transcript_attributes(fields[8])
+                transcript_id = attrs.get("ID", "")
+                if transcript_id.startswith("transcript:"):
+                    transcript_id = transcript_id.replace("transcript:", "")
+                    biotype = attrs.get("biotype", "")
+                    if biotype:
+                        transcript_biotypes[transcript_id] = biotype
+        
+        return transcript_biotypes
+
     def _extract_transcript_attributes(self, gff_attributes: str) -> Dict[str, str]:
         """Extract transcript ID from GFF3 attributes field"""
         attrs = {}
@@ -258,18 +286,13 @@ class SpliceSeqExtractor:
                 attrs[key.strip()] = value.strip()
         return attrs
 
-    def _passes_filter(self, gff_attributes: str) -> bool:
+    def _passes_filter(self, transcript_id: str, transcript_biotypes: Dict[str, str]) -> bool:
+        """Check if the transcript passes filter"""
         if self.transcript_filter == "all":
             return True
 
-        attrs = self._extract_transcript_attributes(gff_attributes)
-
         if self.transcript_filter == "protein_coding":
-            biotype = (
-                attrs.get("gene_biotype")
-                or attrs.get("transcript_biotype")
-                or attrs.get("biotype", "")
-            )
+            biotype = transcript_biotypes.get(transcript_id, "")
             return biotype == "protein_coding"
 
         return True
