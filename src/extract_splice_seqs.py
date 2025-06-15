@@ -18,6 +18,8 @@ import random
 import pysam
 from Bio.Seq import Seq
 
+RANDOM_SEED = 100
+
 
 class StrandType(Enum):
     """Enum for strand types (positive or negative)"""
@@ -107,6 +109,76 @@ class SequenceWindow:
     end: int
 
 
+@dataclass
+class ExpressionData:
+    """Expression Data dictionary"""
+
+    transcript_id: str
+    expression_val: float
+    gene_id: Optional[str] = None
+
+
+@dataclass
+class ExpressionFilter:
+    """Class for filtering expression data based on a threshold"""
+
+    data: Dict[str, float]  # tid: express_val
+    threshold: float
+
+    def passes_threshold(self, transcript_id: str) -> bool:
+        """Determine whether or not expression value is >= threshold"""
+        expression_val = self._find_expression_value(transcript_id)
+        return expression_val >= self.threshold
+
+    def _find_expression_value(self, transcript_id: str) -> float:
+        """Get the expression for a particular transcript"""
+        normalized_id = self._normalize_transcript_id(transcript_id)
+        if normalized_id in self.data:
+            return self.data[normalized_id]
+        for expr_id in self.data:
+            if self._normalize_transcript_id(expr_id) == normalized_id:
+                return self.data[expr_id]
+
+        return 0.0
+
+    def _normalize_transcript_id(self, transcript_id: str) -> str:
+        """Normalize transcript IDs across different expression formats"""
+        if "." in transcript_id:
+            transcript_id = transcript_id.split(".")[0]
+        if transcript_id.startswith("transcript:"):
+            transcript_id = transcript_id.replace("transcript:", "")
+        return transcript_id
+
+
+class ExpressionParser:
+    """Class for building parsers for different gene expression formats"""
+
+    @staticmethod
+    def parse_file(file_path: str, format_type: str) -> Dict[str, float]:
+        """General method for parsing different expression formats"""
+        if format_type == "kallisto":
+            return ExpressionParser._parse_kallisto(file_path)
+        # elif format_type == "salmon":
+        #     return ExpressionParser._parse_salmon(file_path)
+        # elif format_type == "stringtie":
+        #     return ExpressionParser._parse_stringtie(file_path)
+
+    @staticmethod
+    def _parse_kallisto(file_path: str) -> Dict[str, float]:
+        expression_data = {}
+        with open(file_path, "r", encoding="utf-8") as f:
+            header = next(f).strip().split("\t")
+            tpm_idx = header.index("tpm")
+            target_idx = header.index("target_id")
+
+            for line in f:
+                fields = line.strip().split("\t")
+                transcript_id = fields[target_idx]
+                tpm = float(fields[tpm_idx])
+                expression_data[transcript_id] = tpm
+        return expression_data
+
+
 class SpliceSeqExtractor:
     """Main class for splice sequence extraction"""
 
@@ -116,6 +188,9 @@ class SpliceSeqExtractor:
         fasta_path: str,
         params: ExtractionParams,
         transcript_filter: str = "all",
+        expression_file: Optional[str] = None,
+        min_expression: float = 1.0,
+        expression_format: str = "kallisto",
     ):
         """Initialize with file paths and extraction parameters"""
         self.gff_path = Path(gff_path)
@@ -128,6 +203,16 @@ class SpliceSeqExtractor:
             level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
         )
         self.logger = logging.getLogger(__name__)
+        self.expression_filter = None
+
+        if expression_file:
+            expression_data = ExpressionParser.parse_file(
+                expression_file, expression_format
+            )
+            self.expression_filter = ExpressionFilter(expression_data, min_expression)
+            self.logger.info(
+                f"Loaded expression data for {len(expression_data)} transcripts"
+            )
 
     def _validate_inputs(self) -> None:
         """Validate input files and parameters"""
@@ -143,11 +228,15 @@ class SpliceSeqExtractor:
         if not self.gff_path.exists():
             raise FileNotFoundError(f"GFF3 file not found: {self.gff_path}")
 
-        if self.params.n_intron <= 0 or self.params.n_exon <= 0:
+        if not all(x >= 0 for x in [self.params.n_exon, self.params.n_intron]):
             raise ValueError("n_intron and n_exon must be positive integers!")
 
-        if isinstance(self.params.n_exon, float) or isinstance(
-            self.params.n_intron, float
+        if not self.params.buffer_size >= 0:
+            raise ValueError("Buffer size cannot be negative!")
+
+        if not all(
+            isinstance(x, int)
+            for x in [self.params.n_exon, self.params.n_intron, self.params.buffer_size]
         ):
             raise ValueError("n_intron and n_exon must be integers!")
 
@@ -194,7 +283,9 @@ class SpliceSeqExtractor:
         transcript_biotypes = {}
         if self.transcript_filter != all:
             transcript_biotypes = self._collect_transcript_biotypes()
-            self.logger.info(f"Found {len(transcript_biotypes)} transcripts with biotype info")
+            self.logger.info(
+                f"Found {len(transcript_biotypes)} transcripts with biotype info"
+            )
 
         transcripts = defaultdict(
             lambda: Transcript(
@@ -204,7 +295,9 @@ class SpliceSeqExtractor:
 
         with open(self.gff_path, "r", encoding="utf-8") as file:
             for line_num, line in enumerate(file, 1):
-                transcript_data = self._parse_gff_line(line, line_num, transcript_biotypes)
+                transcript_data = self._parse_gff_line(
+                    line, line_num, transcript_biotypes
+                )
                 if transcript_data:
                     transcript_id, seqid, start, end, strand = transcript_data
                     transcript = transcripts[transcript_id]
@@ -220,7 +313,9 @@ class SpliceSeqExtractor:
             if transcript.exons
         }
 
-    def _parse_gff_line(self, line: str, line_num: int, transcript_biotypes: Dict[str, str]) -> Optional[Tuple]:
+    def _parse_gff_line(
+        self, line: str, line_num: int, transcript_biotypes: Dict[str, str]
+    ) -> Optional[Tuple]:
         """Parse a single GFF line and return transcript data if valid"""
         try:
             if line.startswith("#") or not line.strip():
@@ -239,7 +334,9 @@ class SpliceSeqExtractor:
             if not transcript_id:
                 return None
 
-            if transcript_biotypes is not None and not self._passes_filter(transcript_id, transcript_biotypes):
+            if transcript_biotypes is not None and not self._passes_filter(
+                transcript_id, transcript_biotypes
+            ):
                 return None
 
             seqid, start, end, strand = (
@@ -257,16 +354,16 @@ class SpliceSeqExtractor:
     def _collect_transcript_biotypes(self) -> Dict[str, str]:
         """Collect transcript biotype information from mRNA lines"""
         transcript_biotypes = {}
-        
+
         with open(self.gff_path, "r", encoding="utf-8") as file:
             for line in file:
                 if line.startswith("#") or not line.strip():
                     continue
-                    
+
                 fields = line.strip().split("\t")
                 if len(fields) < 9 or fields[2] != "mRNA":
                     continue
-                    
+
                 attrs = self._extract_transcript_attributes(fields[8])
                 transcript_id = attrs.get("ID", "")
                 if transcript_id.startswith("transcript:"):
@@ -274,7 +371,7 @@ class SpliceSeqExtractor:
                     biotype = attrs.get("biotype", "")
                     if biotype:
                         transcript_biotypes[transcript_id] = biotype
-        
+
         return transcript_biotypes
 
     def _extract_transcript_attributes(self, gff_attributes: str) -> Dict[str, str]:
@@ -286,14 +383,22 @@ class SpliceSeqExtractor:
                 attrs[key.strip()] = value.strip()
         return attrs
 
-    def _passes_filter(self, transcript_id: str, transcript_biotypes: Dict[str, str]) -> bool:
+    def _passes_filter(
+        self, transcript_id: str, transcript_biotypes: Dict[str, str]
+    ) -> bool:
         """Check if the transcript passes filter"""
         if self.transcript_filter == "all":
             return True
 
         if self.transcript_filter == "protein_coding":
             biotype = transcript_biotypes.get(transcript_id, "")
-            return biotype == "protein_coding"
+            if biotype != "protein_coding":
+                return False
+
+        if self.expression_filter and not self.expression_filter.passes_threshold(
+            transcript_id
+        ):
+            return False
 
         return True
 
@@ -472,7 +577,7 @@ class SpliceSeqExtractor:
         self, transcripts: Dict[str, Transcript], output_path: str, target_count: int
     ) -> int:
         """Extract negative samples from intronic regions"""
-        random.seed(100)
+        random.seed(RANDOM_SEED)
         samples_written = 0
         window_size = self.params.n_exon + self.params.n_intron
 
@@ -648,6 +753,21 @@ def get_cli_args() -> argparse.Namespace:
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
+    parser.add_argument(
+        "--expression-file",
+        type=str,
+        help="Path to expression quantification file (TSV format)",
+    )
+    parser.add_argument(
+        "--min-expression",
+        type=float,
+        help="Minimum expression to filter on (TPM/FPKM)",
+    )
+    parser.add_argument(
+        "--expression-format",
+        choices=["kallisto", "salmon", "stringtie"],
+        help="Format of expression file (kallisto / salmon / stringtie)",
+    )
 
     return parser.parse_args()
 
@@ -664,7 +784,13 @@ def main() -> None:
     )
 
     extractor = SpliceSeqExtractor(
-        gff_path=args.gff, fasta_path=args.fasta, params=params, transcript_filter="all"
+        gff_path=args.gff,
+        fasta_path=args.fasta,
+        params=params,
+        transcript_filter="protein_coding",
+        expression_file=args.expression_file,
+        min_expression=args.min_expression,
+        expression_format=args.expression_format,
     )
 
     try:
