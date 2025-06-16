@@ -162,6 +162,7 @@ class ExpressionParser:
         #     return ExpressionParser._parse_salmon(file_path)
         # elif format_type == "stringtie":
         #     return ExpressionParser._parse_stringtie(file_path)
+        return None
 
     @staticmethod
     def _parse_kallisto(file_path: str) -> Dict[str, float]:
@@ -211,7 +212,7 @@ class SpliceSeqExtractor:
             )
             self.expression_filter = ExpressionFilter(expression_data, min_expression)
             self.logger.info(
-                f"Loaded expression data for {len(expression_data)} transcripts"
+                "Loaded expression data for %d transcripts", len(expression_data)
             )
 
     def _validate_inputs(self) -> None:
@@ -284,7 +285,7 @@ class SpliceSeqExtractor:
         if self.transcript_filter != "all":
             transcript_biotypes = self._collect_transcript_biotypes()
             self.logger.info(
-                f"Found {len(transcript_biotypes)} transcripts with biotype info"
+                "Found %d transcripts with biotype info", len(transcript_biotypes)
             )
 
         transcripts = defaultdict(
