@@ -281,7 +281,7 @@ class SpliceSeqExtractor:
     def _parse_transcripts(self) -> Dict[str, Transcript]:
         """Parse GFF3 file to extract transcript information"""
         transcript_biotypes = {}
-        if self.transcript_filter != all:
+        if self.transcript_filter != "all":
             transcript_biotypes = self._collect_transcript_biotypes()
             self.logger.info(
                 f"Found {len(transcript_biotypes)} transcripts with biotype info"
@@ -387,8 +387,6 @@ class SpliceSeqExtractor:
         self, transcript_id: str, transcript_biotypes: Dict[str, str]
     ) -> bool:
         """Check if the transcript passes filter"""
-        if self.transcript_filter == "all":
-            return True
 
         if self.transcript_filter == "protein_coding":
             biotype = transcript_biotypes.get(transcript_id, "")
@@ -754,6 +752,13 @@ def get_cli_args() -> argparse.Namespace:
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
     parser.add_argument(
+        "--transcript-filter",
+        type=str,
+        choices=["all", "protein_coding"],
+        help="Include all or only protein coding transcripts",
+        default="protein_coding",
+    )
+    parser.add_argument(
         "--expression-file",
         type=str,
         help="Path to expression quantification file (TSV format)",
@@ -787,7 +792,7 @@ def main() -> None:
         gff_path=args.gff,
         fasta_path=args.fasta,
         params=params,
-        transcript_filter="protein_coding",
+        transcript_filter=args.transcript_filter,
         expression_file=args.expression_file,
         min_expression=args.min_expression,
         expression_format=args.expression_format,

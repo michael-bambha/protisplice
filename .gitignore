@@ -181,3 +181,5 @@ cython_debug/
 *.fai
 *.vscode
 *.gff3
+*.bed
+*.tsv
