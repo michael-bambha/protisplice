@@ -15,6 +15,7 @@ from typing import Dict, List, Tuple, Optional, TextIO
 import logging
 from pathlib import Path
 import random
+import statistics
 import pysam
 from Bio.Seq import Seq
 
@@ -162,6 +163,8 @@ class ExpressionParser:
         #     return ExpressionParser._parse_salmon(file_path)
         # elif format_type == "stringtie":
         #     return ExpressionParser._parse_stringtie(file_path)
+        elif format_type == "gtex":
+            return ExpressionParser._parse_gtex(file_path)
         return None
 
     @staticmethod
@@ -178,6 +181,45 @@ class ExpressionParser:
                 tpm = float(fields[tpm_idx])
                 expression_data[transcript_id] = tpm
         return expression_data
+
+    @staticmethod
+    def _parse_gtex(
+        file_path: str,
+        min_expression: float = 0.0,
+    ) -> Dict[str, float]:
+        """
+        Parse GTEx format efficiently with streaming
+
+        Args:
+            file_path: Path to GTEx expression file
+            min_expression: Minimum expression threshold per tissue
+            min_tissues: Minimum number of tissues with expression above threshold
+        """
+
+        gene_expressions = {}
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            next(f)
+            next(f)
+            next(f)
+            for line in f:
+                fields = line.strip().split("\t")
+                if (
+                    len(fields) < 4
+                ):  # Need at least index, gene_id, gene_name, and one expression value
+                    continue
+
+                gene_id = fields[1]
+                expr_values = [
+                    float(val_str)
+                    for val_str in fields[3:]
+                    if val_str and float(val_str) >= min_expression
+                ]
+            gene_expressions[gene_id] = sum(expr_values) / len(expr_values)
+            avg_expr = statistics.mean(expr_values)
+            gene_expressions[gene_id] = avg_expr
+
+        return gene_expressions
 
 
 class SpliceSeqExtractor:
@@ -771,7 +813,7 @@ def get_cli_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--expression-format",
-        choices=["kallisto", "salmon", "stringtie"],
+        choices=["kallisto", "salmon", "stringtie", "gtex"],
         help="Format of expression file (kallisto / salmon / stringtie)",
     )
 
