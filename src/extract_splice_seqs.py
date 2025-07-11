@@ -131,24 +131,24 @@ class ExpressionFilter:
         expression_val = self._find_expression_value(transcript_id)
         return expression_val >= self.threshold
 
-    def _find_expression_value(self, transcript_id: str) -> float:
-        """Get the expression for a particular transcript"""
-        normalized_id = self._normalize_transcript_id(transcript_id)
-        if normalized_id in self.data:
-            return self.data[normalized_id]
-        for expr_id in self.data:
-            if self._normalize_transcript_id(expr_id) == normalized_id:
-                return self.data[expr_id]
-
-        return 0.0
-
-    def _normalize_transcript_id(self, transcript_id: str) -> str:
+    def normalize_transcript_id(self, transcript_id: str) -> str:
         """Normalize transcript IDs across different expression formats"""
         if "." in transcript_id:
             transcript_id = transcript_id.split(".")[0]
         if transcript_id.startswith("transcript:"):
             transcript_id = transcript_id.replace("transcript:", "")
         return transcript_id
+
+    def _find_expression_value(self, transcript_id: str) -> float:
+        """Get the expression for a particular transcript"""
+        normalized_id = self.normalize_transcript_id(transcript_id)
+        if normalized_id in self.data:
+            return self.data[normalized_id]
+        for expr_id in self.data:
+            if self.normalize_transcript_id(expr_id) == normalized_id:
+                return self.data[expr_id]
+
+        return 0.0
 
 
 class ExpressionParser:
@@ -371,11 +371,18 @@ class SpliceSeqExtractor:
             attrs = self._extract_transcript_attributes(fields[8])
             parent = attrs.get("Parent", "")
             transcript_id = None
-            if parent.startswith("transcript:"):
-                transcript_id = parent.replace("transcript:", "")
+
+            if parent.startswith("ENST") or parent.startswith("ENSMU"):
+                transcript_id = parent
+            elif parent and not parent.startswith("gene:"):
+                transcript_id = parent
 
             if not transcript_id:
                 return None
+
+            transcript_id = ExpressionFilter.normalize_transcript_id(
+                None, transcript_id
+            )
 
             if transcript_biotypes is not None and not self._passes_filter(
                 transcript_id, transcript_biotypes
@@ -395,7 +402,7 @@ class SpliceSeqExtractor:
             return None
 
     def _collect_transcript_biotypes(self) -> Dict[str, str]:
-        """Collect transcript biotype information from mRNA lines"""
+        """Collect transcript biotype information from transcript or mRNA lines"""
         transcript_biotypes = {}
 
         with open(self.gff_path, "r", encoding="utf-8") as file:
@@ -404,16 +411,41 @@ class SpliceSeqExtractor:
                     continue
 
                 fields = line.strip().split("\t")
-                if len(fields) < 9 or fields[2] != "mRNA":
+                if len(fields) < 9:
                     continue
-
+                feature_type = fields[2]
+                if feature_type not in [
+                    "mRNA",
+                    "transcript",
+                    "lncRNA",
+                    "miRNA",
+                    "ncRNA",
+                    "rRNA",
+                    "snoRNA",
+                    "snRNA",
+                    "tRNA",
+                ]:
+                    continue
                 attrs = self._extract_transcript_attributes(fields[8])
                 transcript_id = attrs.get("ID", "")
-                if transcript_id.startswith("transcript:"):
-                    transcript_id = transcript_id.replace("transcript:", "")
-                    biotype = attrs.get("biotype", "")
-                    if biotype:
-                        transcript_biotypes[transcript_id] = biotype
+                transcript_id = ExpressionFilter.normalize_transcript_id(
+                    None, transcript_id
+                )
+
+                biotype = None
+                for attr_name in [
+                    "biotype",
+                    "gene_type",
+                    "transcript_type",
+                    "gene_biotype",
+                    "transcript_biotype",
+                ]:
+                    if attr_name in attrs:
+                        biotype = attrs[attr_name]
+                        break
+
+                if biotype:
+                    transcript_biotypes[transcript_id] = biotype
 
         return transcript_biotypes
 
