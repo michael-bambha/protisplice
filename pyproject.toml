@@ -1,23 +1,61 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "protisplice"
+name = "splice-seq-extractor"
 version = "0.1.0"
-description = "A ML model for determining splice sites in protists."
-authors = [
-    { name = "Michael Bambha", email = "bambha.m@northeastern.edu" }
-]
+description = "A Python package for extracting splice site sequences from genomic data"
 readme = "README.md"
-requires.python = ">=3.7"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Michael Bambha", email = "bambha.m@northeastern.edu"},
+]
+maintainers = [
+    {name = "Michael Bambha", email = "bambha.m@northeastern.edu"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
 dependencies = [
-    "pysam",
-    "biopython",
-    "pytest",
-    "pyyaml"
+    "pysam>=0.19.0",
+    "biopython>=1.79",
 ]
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-py-modules = ["extract_splice_seqs"]
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+    "black>=22.0",
+    "flake8>=4.0",
+    "mypy>=0.900",
+]
+docs = [
+    "sphinx>=4.0",
+    "sphinx-rtd-theme>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/splice-seq-extractor"
+Documentation = "https://splice-seq-extractor.readthedocs.io"
+Repository = "https://github.com/yourusername/splice-seq-extractor.git"
+"Bug Tracker" = "https://github.com/yourusername/splice-seq-extractor/issues"
+
+[project.scripts]
+splice-extractor = "splice_seq_extractor.scripts.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+splice_seq_extractor = ["py.typed"]
