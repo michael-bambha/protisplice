@@ -185,3 +185,4 @@ cython_debug/
 *.gct
 *.gct.gz
 .benchmarks
+data/

@@ -1,0 +1,281 @@
+"""
+File: sequence_extraction.py
+Author: Michael Bambha
+Contact: bambha.m@northeastern.edu
+Description: A Python script for obtaining true positive and false positive
+sequences around splice sites to be used for downstream model training.
+"""
+
+# pylint:disable=no-member
+
+import logging
+import random
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+import pysam
+from Bio.Seq import Seq
+from .data_models import (
+    SpliceJunction,
+    JunctionData,
+    JunctionType,
+    StrandType,
+    Transcript,
+    ExtractionParams,
+)
+
+RANDOM_SEED = 100
+
+
+class SequenceExtractor:
+    """Handles sequence extraction from FASTA files"""
+
+    def __init__(self, fasta_path: str, params: ExtractionParams):
+        self.fasta_path = Path(fasta_path)
+        self.params = params
+        self.logger = logging.getLogger(__name__)
+
+        if not self.fasta_path.exists():
+            raise FileNotFoundError(f"FASTA file not found: {self.fasta_path}")
+
+        fai_path = Path(f"{self.fasta_path}.fai")
+        if not fai_path.exists():
+            raise FileNotFoundError(
+                f"FASTA index {fai_path} not found. Run samtools faidx."
+            )
+
+    def extract_splice_sites(
+        self, junctions: List[SpliceJunction]
+    ) -> List[JunctionData]:
+        """Extract positive splice site sequences"""
+        sequences = []
+
+        with pysam.FastaFile(str(self.fasta_path)) as fasta:
+            for junction in junctions:
+                junction_data = self._process_junction(fasta, junction)
+                if junction_data:
+                    sequences.append(junction_data)
+
+        return sequences
+
+    def sample_introns(
+        self, transcripts: Dict[str, Transcript], target_count: int
+    ) -> List[JunctionData]:
+        """Extract negative samples from intronic regions"""
+        random.seed(RANDOM_SEED)
+        sequences = []
+
+        # Add intron coordinates to transcripts
+        transcripts_with_introns = self._add_intron_coords(transcripts)
+
+        with pysam.FastaFile(str(self.fasta_path)) as fasta:
+            transcript_ids = list(transcripts_with_introns.keys())
+            random.shuffle(transcript_ids)
+
+            for transcript_id in transcript_ids:
+                if len(sequences) >= target_count:
+                    break
+
+                transcript = transcripts_with_introns[transcript_id]
+                extracted = self._sample_from_transcript(
+                    fasta, transcript_id, transcript, target_count - len(sequences)
+                )
+                sequences.extend(extracted)
+
+        return sequences
+
+    def _process_junction(
+        self, fasta: pysam.FastaFile, junction: SpliceJunction
+    ) -> Optional[JunctionData]:
+        """Process a single junction and return JunctionData if valid"""
+        win_start, win_end = self._get_window_coords(junction)
+
+        if win_start is None or win_end is None:
+            return None
+
+        seq = self._extract_sequence(fasta, junction.seqid, win_start, win_end)
+        if not seq:
+            return None
+
+        # Get reverse complement for negative strand
+        if junction.strand == StrandType.NEGATIVE:
+            seq = str(Seq(seq).reverse_complement())
+
+        return JunctionData(
+            junction=junction, window_start=win_start, window_end=win_end, sequence=seq
+        )
+
+    def _get_window_coords(
+        self, junction: SpliceJunction
+    ) -> Tuple[Optional[int], Optional[int]]:
+        """Get window coordinates for a splice junction"""
+        strand = junction.strand
+        junc_type = junction.junction_type
+        coord = junction.coord
+
+        if strand == StrandType.POSITIVE:
+            if junc_type == JunctionType.DONOR:
+                start = coord - self.params.n_exon + 1
+                end = coord + self.params.n_intron
+                return start, end
+            if junc_type == JunctionType.ACCEPTOR:
+                start = coord - self.params.n_intron
+                end = coord + self.params.n_exon - 1
+                return start, end
+
+        if strand == StrandType.NEGATIVE:
+            if junc_type == JunctionType.DONOR:
+                start = coord - self.params.n_intron
+                end = coord + self.params.n_exon - 1
+                return start, end
+            if junc_type == JunctionType.ACCEPTOR:
+                start = coord - self.params.n_exon + 1
+                end = coord + self.params.n_intron
+                return start, end
+
+        return None, None
+
+    def _extract_sequence(
+        self, fasta: pysam.FastaFile, seq_id: str, win_start: int, win_end: int
+    ) -> Optional[str]:
+        """Extract sequence from FASTA file with coordinate validation"""
+        if win_start > win_end or win_start < 1:
+            return None
+
+        if seq_id not in fasta.references:
+            return None
+
+        seq_len = fasta.get_reference_length(seq_id)
+        win_start_0based = max(0, win_start - 1)  # Convert to 0-based
+        win_end_0based = min(
+            win_end, seq_len
+        )  # Keep as 1-based since pysam end is exclusive
+
+        if win_start_0based >= win_end_0based:
+            return None
+
+        extracted = fasta.fetch(seq_id, win_start_0based, win_end_0based)
+        return extracted
+
+    def _add_intron_coords(
+        self, transcripts: Dict[str, Transcript]
+    ) -> Dict[str, Transcript]:
+        """Add intron coordinates to transcript objects"""
+        for transcript in transcripts.values():
+            introns = []
+            sorted_exons = sorted(transcript.exons, key=lambda x: x[0])
+
+            for i in range(len(sorted_exons) - 1):
+                intron_start = sorted_exons[i][1] + 1
+                intron_end = sorted_exons[i + 1][0] - 1
+
+                if intron_start <= intron_end:
+                    introns.append((intron_start, intron_end))
+
+            transcript.introns = introns
+        return transcripts
+
+    def _sample_from_transcript(
+        self,
+        fasta: pysam.FastaFile,
+        transcript_id: str,
+        transcript: Transcript,
+        max_samples: int,
+    ) -> List[JunctionData]:
+        """Sample introns of a transcript. Can also provide a maximum cap on the number of samples,
+        but if downstream buffer_size is moderate to high, then max_samples will not be reached.
+
+        Args:
+            fasta (pysam.FastaFile): pysam FastaFile object
+            transcript_id (str): ID of transcript
+            transcript (Transcript): Transcript data class
+            max_samples (int): maximum cap on # samples to obtain
+
+        Returns:
+            List[JunctionData]: List of Dict in the format {junction: SpliceJunction,
+            win_start: win_start, win_end: win_end, seq: seq}.
+            See docs on JunctionData and SpliceJunction in data_models.py.
+        """
+        if not transcript.introns:
+            return []
+
+        sequences = []
+
+        for intron_start, intron_end in transcript.introns:
+            if len(sequences) >= max_samples:
+                break
+
+            junction_data = self._sample_from_intron(
+                fasta,
+                transcript_id,
+                transcript,
+                intron_start,
+                intron_end,
+                len(sequences),
+            )
+            if junction_data:
+                sequences.append(junction_data)
+
+        return sequences
+
+    def _sample_from_intron(
+        self,
+        fasta: pysam.FastaFile,
+        transcript_id: str,
+        transcript: Transcript,
+        intron_start: int,
+        intron_end: int,
+        sample_index: int,
+    ) -> Optional[JunctionData]:
+        """Sample sequence regions from introns from defined start/end coordinates.
+
+        Args:
+            fasta (pysam.FastaFile): pysam FASTA object
+            transcript_id (str): ID of transcript
+            transcript (Transcript): Transcript data class
+            intron_start (int): Desired start coordinate
+            intron_end (int): Desired end coordinate
+            sample_index (int): _description_
+
+        Returns:
+            Optional[JunctionData]: List of Dict in the format {junction: SpliceJunction,
+            win_start: win_start, win_end: win_end, seq: seq}.
+            See docs on JunctionData and SpliceJunction in data_models.py.
+        """
+        # apply the buffer size to shrink possible start/end locations
+        safe_start = intron_start + self.params.buffer_size
+        safe_end = intron_end - self.params.buffer_size
+
+        if safe_end - safe_start + 1 < self.params.window_size:
+            return None
+
+        # random sampling within buffered region
+        max_start = safe_end - self.params.window_size + 1
+        if safe_start > max_start:
+            return None
+
+        rand_start = random.randint(safe_start, max_start)
+        rand_end = rand_start + self.params.window_size - 1
+
+        seq = self._extract_sequence(fasta, transcript.info.seqid, rand_start, rand_end)
+        if not seq:
+            return None
+
+        # apply reverse complement for negative strand
+        if transcript.info.strand == StrandType.NEGATIVE:
+            seq = str(Seq(seq).reverse_complement())
+
+        # create pseudo-junction for consistent output format
+        pseudo_junction = SpliceJunction(
+            id=f"{transcript_id}_intron_{sample_index}",
+            seqid=transcript.info.seqid,
+            coord=rand_start,
+            strand=transcript.info.strand,
+            junction_type=JunctionType.INTRON,
+        )
+
+        return JunctionData(
+            junction=pseudo_junction,
+            window_start=rand_start,
+            window_end=rand_end,
+            sequence=seq,
+        )
