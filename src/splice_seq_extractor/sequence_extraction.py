@@ -23,8 +23,6 @@ from .data_models import (
     ExtractionParams,
 )
 
-RANDOM_SEED = 100
-
 
 class SequenceExtractor:
     """Handles sequence extraction from FASTA files"""
@@ -58,10 +56,10 @@ class SequenceExtractor:
         return sequences
 
     def sample_introns(
-        self, transcripts: Dict[str, Transcript], target_count: int
+        self, transcripts: Dict[str, Transcript], target_count: int, seed: int = 100
     ) -> List[JunctionData]:
         """Extract negative samples from intronic regions"""
-        random.seed(RANDOM_SEED)
+        random.seed(seed)
         sequences = []
 
         # Add intron coordinates to transcripts

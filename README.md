@@ -14,7 +14,7 @@ A Python package for extracting splice site sequences from genomic data for mach
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/splice-seq-extractor.git
+git clone https://github.com/michael-bambha/protisplice.git
 cd splice-seq-extractor
 pip install -e .
 ```
