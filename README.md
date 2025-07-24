@@ -36,9 +36,6 @@ extractor = SpliceSeqExtractor(
     fasta_path="genome.fasta"  # Must be indexed with samtools faidx
 )
 
-# Extract sequences
-results = extractor.extract_all_sequences()
-
 # Write to FASTA files
 pos_count, neg_count = extractor.write_sequences_to_fasta(
     results,
@@ -158,22 +155,6 @@ are labeled as both donors and acceptors. Note that this is an inference from th
 and may not reflect biological reality in all cases due to alternative splicing.
 I plan to look into finding a more accurate way of inferring junction type metadata
 by including alternative splicing info in the future.
-
-## API Reference
-
-### Main Classes
-
-- `SpliceSeqExtractor`: Main extraction class
-- `ExtractionParams`: Configuration parameters
-- `ExtractionResults`: Container for extraction results
-- `TranscriptFilter`: Transcript filtering options
-
-### Key Methods
-
-- `extract_all_sequences()`: Extract both positive and negative sequences
-- `extract_positive_sequences()`: Extract only positive sequences
-- `extract_negative_sequences(count)`: Extract specified number of negative sequences
-- `write_sequences_to_fasta()`: Write sequences to FASTA files
 
 ## Contributing
 

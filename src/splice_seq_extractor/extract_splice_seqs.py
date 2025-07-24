@@ -7,8 +7,6 @@ Users can define a window of bases into the intron and exon regions of an
 identified splice junction and extract out the sequence. Additionally,
 methods for randomly sampling introns of transcripts are provided.
 """
-
-import logging
 from typing import Dict, List, Optional, Tuple
 
 from .data_models import (
@@ -34,7 +32,7 @@ class SpliceSeqExtractor:
         gff_path: str,
         fasta_path: str,
         params: Optional[ExtractionParams] = None,
-        transcript_filter: TranscriptFilter = TranscriptFilter.PROTEIN_CODING,
+        transcript_filter: TranscriptFilter = TranscriptFilter.ALL,
         expression_file: Optional[str] = None,
         min_expression: float = 1.0,
         expression_format: str = "kallisto",
@@ -56,20 +54,12 @@ class SpliceSeqExtractor:
         self.params = params or ExtractionParams()
         self.transcript_filter = transcript_filter
 
-        logging.basicConfig(
-            level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-        )
-        self.logger = logging.getLogger(__name__)
-
         self.expression_filter = None
         if expression_file:
             expression_data = ExpressionParser.parse_file(
                 expression_file, expression_format
             )
             self.expression_filter = ExpressionFilter(expression_data, min_expression)
-            self.logger.info(
-                "Loaded expression data for %d transcripts", len(expression_data)
-            )
         self.gff_parser = GFFParser(gff_path, transcript_filter, self.expression_filter)
         self.sequence_extractor = SequenceExtractor(fasta_path, self.params)
         self.junction_extractor = SpliceJunctionExtractor()
@@ -86,9 +76,7 @@ class SpliceSeqExtractor:
             Dict[str, Transcript]: Dict of ID: transcript
         """
         if self._transcripts is None:
-            self.logger.info("Parsing transcripts from GFF file...")
             self._transcripts = self.gff_parser.parse_transcripts()
-            self.logger.info("Found %d transcripts", len(self._transcripts))
         return self._transcripts
 
     @property
@@ -100,11 +88,9 @@ class SpliceSeqExtractor:
             coord: 1-based coord of first exon base, strand: + or -, junc_type: donor or acceptor}
         """
         if self._junctions is None:
-            self.logger.info("Extracting splice junctions...")
             self._junctions = self.junction_extractor.identify_splice_junctions(
                 self.transcripts
             )
-            self.logger.info("Found %d splice junctions", len(self._junctions))
         return self._junctions
 
     def extract_positive_sequences(self) -> List[JunctionData]:
@@ -114,7 +100,6 @@ class SpliceSeqExtractor:
             List[JunctionData]: List of {junction: SpliceJunction, win_start: win_start,
             win_end: win_end, sequence: sequence}
         """
-        self.logger.info("Extracting positive sequences...")
         return self.sequence_extractor.extract_splice_sites(self.junctions)
 
     def extract_negative_sequences(
@@ -133,8 +118,6 @@ class SpliceSeqExtractor:
         """
         if target_count is None:
             target_count = len(self.junctions)
-
-        self.logger.info("Extracting negative sequences...")
         return self.sequence_extractor.sample_introns(
             self.transcripts, target_count, seed
         )
