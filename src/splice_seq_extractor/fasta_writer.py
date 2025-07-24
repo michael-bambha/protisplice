@@ -12,7 +12,15 @@ class FastaWriter:
 
     @staticmethod
     def write_sequences(sequences: List[JunctionData], output_path: str) -> int:
-        """Write sequence data to FASTA file"""
+        """Write the identified splice junctions out in FASTA format.
+
+        Args:
+            sequences (List[JunctionData]): _description_
+            output_path (str): _description_
+
+        Returns:
+            int: _description_
+        """
         count = 0
         with open(output_path, "w", encoding="utf-8") as f:
             for data in sequences:

@@ -1,10 +1,11 @@
 """
-Main SpliceSeqExtractor class for splice sequence extraction.
-
+File: extract_splice_seqs.py
 Author: Michael Bambha
 Contact: bambha.m@northeastern.edu
-Description: A Python class for obtaining true positive and false positive
-sequences around splice sites to be used for downstream model training.
+Description: Main SpliceSeqExtractor class for splice sequence extraction.
+Users can define a window of bases into the intron and exon regions of an
+identified splice junction and extract out the sequence. Additionally,
+methods for randomly sampling introns of transcripts are provided.
 """
 
 import logging
@@ -79,7 +80,11 @@ class SpliceSeqExtractor:
 
     @property
     def transcripts(self) -> Dict[str, Transcript]:
-        """Get transcripts (lazy loaded)"""
+        """Lazy loaded transcripts
+
+        Returns:
+            Dict[str, Transcript]: Dict of ID: transcript
+        """
         if self._transcripts is None:
             self.logger.info("Parsing transcripts from GFF file...")
             self._transcripts = self.gff_parser.parse_transcripts()
@@ -88,7 +93,12 @@ class SpliceSeqExtractor:
 
     @property
     def junctions(self) -> List[SpliceJunction]:
-        """Get splice junctions (lazy loaded)"""
+        """Lazy loaded junctions
+
+        Returns:
+            List[SpliceJunction]: List of {id: transcriptid_junctype_num, seqid: chr#,
+            coord: 1-based coord of first exon base, strand: + or -, junc_type: donor or acceptor}
+        """
         if self._junctions is None:
             self.logger.info("Extracting splice junctions...")
             self._junctions = self.junction_extractor.identify_splice_junctions(
@@ -98,66 +108,60 @@ class SpliceSeqExtractor:
         return self._junctions
 
     def extract_positive_sequences(self) -> List[JunctionData]:
-        """Extract positive splice site sequences"""
+        """Finds the sequences for identified true splice sites.
+
+        Returns:
+            List[JunctionData]: List of {junction: SpliceJunction, win_start: win_start,
+            win_end: win_end, sequence: sequence}
+        """
         self.logger.info("Extracting positive sequences...")
         return self.sequence_extractor.extract_splice_sites(self.junctions)
 
     def extract_negative_sequences(
-        self, target_count: Optional[int] = None
+        self, target_count: Optional[int] = None, seed: int = 100
     ) -> List[JunctionData]:
-        """Extract negative sequences from intronic regions"""
+        """Finds the sequence for randomly determined start position of an intron.
+
+        Args:
+            target_count (Optional[int], optional): Max number of sequences to sample.
+            Defaults to None.
+            seed (int): Random seed. Defaults to 100.
+
+        Returns:
+            List[JunctionData]: List of {junction: SpliceJunction, win_start: win_start,
+            win_end: win_end, sequence: sequence}
+        """
         if target_count is None:
             target_count = len(self.junctions)
 
         self.logger.info("Extracting negative sequences...")
-        return self.sequence_extractor.sample_introns(self.transcripts, target_count)
-
-    def extract_all_sequences(
-        self, negative_count: Optional[int] = None
-    ) -> ExtractionResults:
-        """Extract both positive and negative sequences"""
-        positive_sequences = self.extract_positive_sequences()
-
-        if negative_count is None:
-            negative_count = len(positive_sequences)
-
-        negative_sequences = self.extract_negative_sequences(negative_count)
-
-        results = ExtractionResults(
-            positive_sequences=positive_sequences, negative_sequences=negative_sequences
+        return self.sequence_extractor.sample_introns(
+            self.transcripts, target_count, seed
         )
 
-        self.logger.info(
-            "Extraction complete -- found %d positive and %d negative sequences",
-            results.positive_count,
-            results.negative_count,
+    def extract_splice_sites(self) -> List[JunctionData]:
+        """Find sequences around true splice sites.
+
+        Returns:
+            List[JunctionData]:  List of JunctionData objects with splice site sequences
+        """
+        return self.sequence_extractor.extract_splice_sites(self.junctions)
+
+    def sample_introns(
+        self, target_count: int, random_seed: Optional[int] = None
+    ) -> List[JunctionData]:
+        """Sample introns of extracted transcripts. Finds a
+
+        Args:
+            target_count (int): Maximum number of introns to sample
+            random_seed (Optional[int], optional): _description_. Defaults to None.
+
+        Returns:
+            List[JunctionData]: _description_
+        """
+        return self.sequence_extractor.sample_introns(
+            self.transcripts, target_count, random_seed
         )
-
-        return results
-
-    def extract_splice_sites(self) -> ExtractionResults:
-        """Extract only positive sequences"""
-        positive_sequences = self.extract_positive_sequences()
-
-        results = ExtractionResults(positive_sequences=positive_sequences)
-
-        self.logger.info(
-            "Positive extraction complete -- found %d sequences", results.positive_count
-        )
-
-        return results
-
-    def sample_introns(self, target_count: int) -> ExtractionResults:
-        """Extract only negative sequences"""
-        negative_sequences = self.extract_negative_sequences(target_count)
-
-        results = ExtractionResults(negative_sequences=negative_sequences)
-
-        self.logger.info(
-            "Negative extraction complete -- found %d sequences", results.negative_count
-        )
-
-        return results
 
     def write_sequences_to_fasta(
         self,
@@ -168,29 +172,14 @@ class SpliceSeqExtractor:
         """Write sequences to FASTA files"""
         return FastaWriter.write_results(results, positive_output, negative_output)
 
-    def extract_and_write(
-        self,
-        positive_output: Optional[str] = None,
-        negative_output: Optional[str] = None,
-        negative_count: Optional[int] = None,
-    ) -> Optional[Tuple]:
-        """Extract sequences and write to FASTA files in one step"""
-        results = None
-        if positive_output and negative_output:
-            results = self.extract_all_sequences(negative_count)
-        elif positive_output:
-            results = self.extract_splice_sites()
-        elif negative_output:
-            if negative_count is None:
-                negative_count = len(self.junctions)
-            results = self.sample_introns(negative_count)
-        else:
-            raise ValueError("Must provide at least one output file path")
+    def get_info(self) -> Dict[str, int]:
+        """Returns parameters and info about the extractor. Includes exon bases,
+        intron bases, window size, buffer size, transcript count, and splice junction count.
 
-        return self.write_sequences_to_fasta(results, positive_output, negative_output)
-
-    def get_stats(self) -> Dict[str, int]:
-        """Get statistics about the extraction parameters and data"""
+        Returns:
+            Dict[str, int]: Dict of exon bases,
+        intron bases, window size, buffer size, transcript count, and splice junction count.
+        """
         return {
             "window_size": self.params.window_size,
             "exon_bases": self.params.n_exon,

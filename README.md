@@ -187,15 +187,6 @@ by including alternative splicing info in the future.
 
 MIT License - see LICENSE file for details.
 
-## Citation
-
-If you use this package in your research, please cite:
-
-```
-Bambha, M. (2025). Splice Sequence Extractor: A Python package for extracting 
-splice site sequences from genomic data. 
-```
-
 ## Support
 
 For questions or issues, please open an issue on the GitHub repository or contact bambha.m@northeastern.edu.

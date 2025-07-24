@@ -105,7 +105,18 @@ class SequenceExtractor:
     def _get_window_coords(
         self, junction: SpliceJunction
     ) -> Tuple[Optional[int], Optional[int]]:
-        """Get window coordinates for a splice junction"""
+        """Based on identified junctions, applies the user-defined
+        number of bases to include for the intron and exon regions.
+        Sequence coordinates are identified based on the supplied coordinate
+        adjustments, and function returns (start, end) of the adjusted
+        sequence.
+
+        Args:
+            junction (SpliceJunction): _description_
+
+        Returns:
+            Tuple[Optional[int], Optional[int]]: Tuple of (start, end), 1-based coordinates
+        """
         strand = junction.strand
         junc_type = junction.junction_type
         coord = junction.coord
@@ -135,7 +146,20 @@ class SequenceExtractor:
     def _extract_sequence(
         self, fasta: pysam.FastaFile, seq_id: str, win_start: int, win_end: int
     ) -> Optional[str]:
-        """Extract sequence from FASTA file with coordinate validation"""
+        """Uses Pysam's FastaFile.fetch() to find the sequence of an indexed
+        FASTA file. Takes in 1-based start and end coordinates, converts to
+        0-based for Pysam compatability, then fetches the sequence.
+
+        Args:
+            fasta (pysam.FastaFile): pysam FastaFile object, built from indexed FASTA
+            seq_id (str): Reference ID for the FASTA ID (must match reference)
+            win_start (int): 1-based inclusive start of the sequence
+            win_end (int): 1-based exclusive end of the sequence
+
+        Returns:
+            Optional[str]: String of the fetched sequence, or None if coordinates
+            are not valid, or if sequence ID not found in references.
+        """
         if win_start > win_end or win_start < 1:
             return None
 
@@ -157,7 +181,15 @@ class SequenceExtractor:
     def _add_intron_coords(
         self, transcripts: Dict[str, Transcript]
     ) -> Dict[str, Transcript]:
-        """Add intron coordinates to transcript objects"""
+        """Adds introns to Transcript object.
+
+        Args:
+            transcripts (Dict[str, Transcript]): Dict of ID: Transcript. Transcript
+            introns are initialized to None
+
+        Returns:
+            Dict[str, Transcript]: _description_
+        """
         for transcript in transcripts.values():
             introns = []
             sorted_exons = sorted(transcript.exons, key=lambda x: x[0])

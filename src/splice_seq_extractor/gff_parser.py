@@ -69,7 +69,7 @@ class GFFParser:
             transcript_biotypes (Dict[str, str]): Dict of {ID: biotype}
 
         Returns:
-            Optional[Tuple]: _description_
+            Optional[Tuple]: Tuple of (transcript_id, seq_id, start, end, strand)
         """
         try:
             if line.startswith("#") or not line.strip():
