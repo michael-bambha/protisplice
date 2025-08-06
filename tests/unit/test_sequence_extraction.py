@@ -2,7 +2,7 @@
 File: test_sequence_extraction.py
 Description: Tests for sequence extraction logic
 """
-
+# pylint: disable=protected-access
 import pytest
 from splice_seq_extractor.sequence_extraction import SequenceExtractor
 from splice_seq_extractor.data_models import JunctionType, StrandType, SpliceJunction
