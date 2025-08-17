@@ -5,7 +5,7 @@ Description: Unit tests for data structures
 
 import pytest
 
-from splice_seq_extractor.data_models import (
+from protisplice import (
     ExtractionParams,
     JunctionData,
     ExtractionResults,

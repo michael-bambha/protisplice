@@ -4,9 +4,9 @@ Description: Test GFF parsing module
 """
 
 import pytest
-from splice_seq_extractor.gff_parser import GFFParser
-from splice_seq_extractor.data_models import TranscriptFilter, StrandType
-from splice_seq_extractor.expression import ExpressionFilter
+from protisplice import GFFParser
+from protisplice import TranscriptFilter, StrandType
+from protisplice import ExpressionFilter
 
 
 class TestGFFParser:

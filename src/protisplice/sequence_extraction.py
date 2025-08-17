@@ -8,7 +8,6 @@ sequences around splice sites to be used for downstream model training.
 
 # pylint:disable=no-member
 
-import logging
 import random
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -30,7 +29,6 @@ class SequenceExtractor:
     def __init__(self, fasta_path: str, params: ExtractionParams):
         self.fasta_path = Path(fasta_path)
         self.params = params
-        self.logger = logging.getLogger(__name__)
 
         if not self.fasta_path.exists():
             raise FileNotFoundError(f"FASTA file not found: {self.fasta_path}")
@@ -44,7 +42,17 @@ class SequenceExtractor:
     def extract_splice_sites(
         self, junctions: List[SpliceJunction]
     ) -> List[JunctionData]:
-        """Extract positive splice site sequences"""
+        """Get the sequences around known splice coordinates.
+
+        Args:
+            junctions (List[SpliceJunction]): SpliceJunction object containing
+            transcript ID, seqID (chr#), coord (1-based coord of first exon base
+            at the junction), strand, and junction type.
+
+        Returns:
+            List[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
+            win_start: win_start, win_end: win_end, seq: seq}.
+        """
         sequences = []
 
         with pysam.FastaFile(str(self.fasta_path)) as fasta:
@@ -58,7 +66,16 @@ class SequenceExtractor:
     def sample_introns(
         self, transcripts: Dict[str, Transcript], target_count: int, seed: int = 100
     ) -> List[JunctionData]:
-        """Extract negative samples from intronic regions"""
+        """Sample introns from transcripts.
+        Args:
+            transcripts (Dict[str, Transcript]): Dict of transcript_id: Transcript
+            target_count (int): Max number of introns to sample
+            seed (int, optional): Random state. Defaults to 100.
+
+        Returns:
+            List[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
+            win_start: win_start, win_end: win_end, seq: seq}.
+        """
         random.seed(seed)
         sequences = []
 
@@ -84,7 +101,21 @@ class SequenceExtractor:
     def _process_junction(
         self, fasta: pysam.FastaFile, junction: SpliceJunction
     ) -> Optional[JunctionData]:
-        """Process a single junction and return JunctionData if valid"""
+        """Finds the window coordinates using _get_window_coords, then extracts
+        the respective sequence using _extract_sequence to obtain sequences
+        around splice sites, as dictated by user's input params. Will return
+        the reverse complement for sequences identified as (-) strand.
+
+        Args:
+            fasta (pysam.FastaFile): pysam FastaFile object built from user input
+            FASTA path
+            junction (SpliceJunction): SpliceJunction object containing transcript ID, seqID (chr#),
+            coord (1-based coord of first exon base at the junction), strand, and junction type.
+
+        Returns:
+            Optional[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
+            win_start: win_start, win_end: win_end, seq: seq}.
+        """
         win_start, win_end = self._get_window_coords(junction)
 
         if win_start is None or win_end is None:
@@ -112,10 +143,13 @@ class SequenceExtractor:
         sequence.
 
         Args:
-            junction (SpliceJunction): _description_
+            junction (SpliceJunction): SpliceJunction object containing transcript ID, seqID (chr#),
+            coord (1-based coord of first exon base at the junction), strand, and junction type.
+
 
         Returns:
             Tuple[Optional[int], Optional[int]]: Tuple of (start, end), 1-based coordinates
+            calculated from the user's input parameters and the junction coordinates.
         """
         strand = junction.strand
         junc_type = junction.junction_type
@@ -167,10 +201,8 @@ class SequenceExtractor:
             return None
 
         seq_len = fasta.get_reference_length(seq_id)
-        win_start_0based = max(0, win_start - 1)  # Convert to 0-based
-        win_end_0based = min(
-            win_end, seq_len
-        )  # Keep as 1-based since pysam end is exclusive
+        win_start_0based = max(0, win_start - 1)  # pysam needs 0-based for fetch
+        win_end_0based = min(win_end, seq_len)  # pysam end is exclusive
 
         if win_start_0based >= win_end_0based:
             return None
@@ -188,7 +220,9 @@ class SequenceExtractor:
             introns are initialized to None
 
         Returns:
-            Dict[str, Transcript]: _description_
+            Dict[str, Transcript]: Dict of transcript_id: Transcript. Transcript object:
+            {{TranscriptInfo: seqid, strand}, {exons: List[start, end]},
+            {introns: List[start, end] = None}}
         """
         for transcript in transcripts.values():
             introns = []
@@ -223,7 +257,6 @@ class SequenceExtractor:
         Returns:
             List[JunctionData]: List of Dict in the format {junction: SpliceJunction,
             win_start: win_start, win_end: win_end, seq: seq}.
-            See docs on JunctionData and SpliceJunction in data_models.py.
         """
         if not transcript.introns:
             return []
@@ -264,12 +297,11 @@ class SequenceExtractor:
             transcript (Transcript): Transcript data class
             intron_start (int): Desired start coordinate
             intron_end (int): Desired end coordinate
-            sample_index (int): _description_
+            sample_index (int): Number of the intron ordered 5' to 3'.
 
         Returns:
-            Optional[JunctionData]: List of Dict in the format {junction: SpliceJunction,
+            Optional[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
             win_start: win_start, win_end: win_end, seq: seq}.
-            See docs on JunctionData and SpliceJunction in data_models.py.
         """
         # apply the buffer size to shrink possible start/end locations
         safe_start = intron_start + self.params.buffer_size
@@ -290,13 +322,12 @@ class SequenceExtractor:
         if not seq:
             return None
 
-        # apply reverse complement for negative strand
         if transcript.info.strand == StrandType.NEGATIVE:
             seq = str(Seq(seq).reverse_complement())
 
         # create pseudo-junction for consistent output format
         pseudo_junction = SpliceJunction(
-            id=f"{transcript_id}_intron_{sample_index}",
+            id=f"{transcript_id}_intron_{sample_index + 1}",
             seqid=transcript.info.seqid,
             coord=rand_start,
             strand=transcript.info.strand,

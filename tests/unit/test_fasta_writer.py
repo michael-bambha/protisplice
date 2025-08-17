@@ -3,8 +3,8 @@ File: test_fasta_writer.py
 Description: Test FASTA writing functionality
 """
 
-from splice_seq_extractor.fasta_writer import FastaWriter
-from splice_seq_extractor.data_models import ExtractionResults, JunctionData
+from protisplice import FastaWriter
+from protisplice import ExtractionResults, JunctionData
 
 
 class TestFastaWriter:

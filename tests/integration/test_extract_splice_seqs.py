@@ -2,8 +2,8 @@
 File: test_extract_splice_seqs.py
 Description: Integration test for splice site extraction workflow
 """
-from splice_seq_extractor import SpliceSeqExtractor
-from splice_seq_extractor.data_models import (
+from protisplice import SpliceSeqExtractor
+from protisplice import (
     ExtractionParams,
     ExtractionResults,
 )

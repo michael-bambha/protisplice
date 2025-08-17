@@ -52,11 +52,7 @@ class JunctionData:
     sequence: Optional[str] = None
 
     def to_fasta_header(self) -> str:
-        """Creates a FASTA header from JunctionData object
-
-        Returns:
-            str: >seqid_junctype_strand_winstart_winend
-        """
+        """Create FASTA header for the splice junction"""
         return (
             f">{self.junction.seqid}_{self.junction.junction_type.value}_"
             f"{self.junction.strand.value}_{self.window_start}_{self.window_end}"

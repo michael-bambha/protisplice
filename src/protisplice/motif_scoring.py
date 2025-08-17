@@ -46,14 +46,17 @@ def generate_pwm(
     background_freq: Dict[str, float] = None,
     epsilon: float = 1e-10,
 ) -> pd.DataFrame:
-    """Generate a position probability matrix from a list
-    of aligned sequences
+    """Generate a position weight matrix from a list of aligned sequences.
 
     Args:
         seqs (List[Seq]): List of aligned sequences (Bio.Seq objects).
+        background_freq (Dict[str, float], optional): Background frequency of the genome/chromosome
+        of origin of the sequences. If None is passed in, equal probabilities of 0.25 will be used
+        for all nucleotides.
+        epsilon (float, optional): Pseudocount to prevent divide by 0 errors. Defaults to 1e-10.
 
     Returns:
-        pd.DataFrame: Pandas dataframe containing the probability for each sequence
+        pd.DataFrame: Pandas dataframe containing the log-odds for each nucleotide at each position.
     """
     if background_freq is None:
         background_freq = {'A': 0.25, 'G': 0.25, 'C': 0.25, 'T': 0.25}

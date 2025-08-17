@@ -31,7 +31,15 @@ class GFFParser:
             )
 
     def parse_transcripts(self) -> Dict[str, Transcript]:
-        """Parse GFF3 file to extract transcript information"""
+        """Parses a GFF3 file and obtains all transcripts found into a dictionary
+        of transcript_id: Transcript. Transcript object contains the sequence ID, strand,
+        exons, and introns of the transcript.
+
+        Returns:
+            Dict[str, Transcript]: Dict of transcript_id: Transcript. Transcript object:
+            {{TranscriptInfo: seqid, strand}, {exons: List[start, end]},
+            {introns: List[start, end] = None}}
+        """
         transcript_biotypes = {}
         if self.transcript_filter != TranscriptFilter.ALL:
             transcript_biotypes = self._collect_transcript_biotypes()

@@ -1,13 +1,15 @@
-# Splice Sequence Extractor
+# Protisplice
 
-A Python package for extracting splice site sequences from genomic data for machine learning model training.
+A Python package for extracting splice site sequences from any organism. Also provides
+functions for finding false/decoy splice sites, which can be used for easily obtaining
+data for training splice site classifiers.
 
 ## Features
 
-- Extract true and decoy splice site sequences from GFF3 and FASTA files
-- Support for expression-based filtering (Kallisto, GTEx formats)
+- Extract true and decoy splice site sequences from GFF3 and FASTA files of any organism
+- Filter transcripts based on RNA-seq count data, as well as transcript type filtering (protein-coding)
 - Configurable extraction parameters (exon/intron lengths, buffer sizes)
-- Transcript type filtering (all, protein-coding)
+- Functions for calculating position weight, frequency, and probability matrices
 
 ## Installation
 
@@ -24,11 +26,16 @@ pip install -e .
 - Python ≥ 3.8
 - pysam ≥ 0.19.0
 - biopython ≥ 1.79
+- pandas ≥ 1.4
+- numpy ≥ 2.0
 
 ## Quick Start
 
+For an additional tutorial, please see the included Jupyter notebook,
+example_workflow.ipynb.
+
 ```python
-from splice_seq_extractor import SpliceSeqExtractor, ExtractionParams
+from protisplice import SpliceSeqExtractor, ExtractionParams
 
 # Basic usage
 extractor = SpliceSeqExtractor(
@@ -45,6 +52,7 @@ pos_count, neg_count = extractor.write_sequences_to_fasta(
 
 print(f"Extracted {pos_count} positive and {neg_count} negative sequences")
 ```
+
 This method will split true splice sites and decoy splice sites into two separate files. 
 By default, `SpliceSeqExtractor` will find all available true splice sites, taking 40
 bases from the exon and 80 bases from the intron for default sequence length of 120.
@@ -64,7 +72,7 @@ from splice_seq_extractor import ExtractionParams, TranscriptFilter
 params = ExtractionParams(
     n_exon=50,      # Bases from exon region
     n_intron=100,   # Bases from intron region  
-    buffer_size=75  # Buffer around splice sites for negative sampling
+    buffer_size=75  # Buffer around splice sites for decoy sampling
 )
 
 extractor = SpliceSeqExtractor(

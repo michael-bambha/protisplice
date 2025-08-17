@@ -3,8 +3,8 @@ File: test_splice_junction_extractor.py
 Description: Test splice junction extraction logic
 """
 
-from splice_seq_extractor.splice_junction_extractor import SpliceJunctionExtractor
-from splice_seq_extractor.data_models import (
+from protisplice import SpliceJunctionExtractor
+from protisplice import (
     JunctionType,
     StrandType,
     Transcript,

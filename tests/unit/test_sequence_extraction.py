@@ -4,8 +4,8 @@ Description: Tests for sequence extraction logic
 """
 # pylint: disable=protected-access
 import pytest
-from splice_seq_extractor.sequence_extraction import SequenceExtractor
-from splice_seq_extractor.data_models import JunctionType, StrandType, SpliceJunction
+from protisplice import SequenceExtractor
+from protisplice import JunctionType, StrandType, SpliceJunction
 
 
 class TestSequenceExtractor:

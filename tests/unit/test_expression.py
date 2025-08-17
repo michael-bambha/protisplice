@@ -4,7 +4,7 @@ Description: Test for gene expression filtering module
 """
 
 import pytest
-from splice_seq_extractor.expression import ExpressionFilter, ExpressionParser
+from protisplice import ExpressionFilter, ExpressionParser
 
 
 class TestExpressionFilter:
