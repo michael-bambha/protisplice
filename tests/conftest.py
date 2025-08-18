@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import pysam
 
-from splice_seq_extractor.data_models import (
+from protisplice.data_models import (
     ExtractionParams,
     SpliceJunction,
     JunctionType,

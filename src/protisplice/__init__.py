@@ -17,7 +17,7 @@ from .data_models import (
     JunctionType,
     StrandType,
     Transcript,
-    TranscriptInfo
+    TranscriptInfo,
 )
 from .expression import ExpressionFilter, ExpressionParser
 from .gff_parser import GFFParser
@@ -44,7 +44,6 @@ __all__ = [
     "generate_ppm",
     "generate_pwm",
     "generate_pfm",
-    
 ]
 
 __version__ = "0.1.0"

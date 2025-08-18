@@ -48,10 +48,10 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/splice-seq-extractor"
+Homepage = "https://github.com/michael-bambha/protisplice"
 Documentation = "https://splice-seq-extractor.readthedocs.io"
-Repository = "https://github.com/yourusername/splice-seq-extractor.git"
-"Bug Tracker" = "https://github.com/yourusername/splice-seq-extractor/issues"
+Repository = "https://github.com/michael-bambha/protisplice/.git"
+"Bug Tracker" = "https://github.com/michael-bambha/protisplice/issues"
 
 [project.scripts]
 
@@ -59,4 +59,4 @@ Repository = "https://github.com/yourusername/splice-seq-extractor.git"
 where = ["src"]
 
 [tool.setuptools.package-data]
-splice_seq_extractor = ["py.typed"]
+protisplice = ["py.typed"]

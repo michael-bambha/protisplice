@@ -2,6 +2,7 @@
 File: test_gff_parser.py
 Description: Test GFF parsing module
 """
+# pylint:disable=W0212
 
 import pytest
 from protisplice import GFFParser
