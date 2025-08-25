@@ -1,14 +1,23 @@
 # Protisplice
 
-A Python package for extracting splice site sequences from any organism. Also provides
-functions for finding false/decoy splice sites, which can be used for easily obtaining
-data for training splice site classifiers.
+A Python package for extracting splice site sequences from any organism given
+a FASTA and GFF3 annotation file.
+
+Protisplice allows for straightforward dataset generation for splice site classifiers.
+In addition to locating true splice sites of any length, users can also generate
+a "decoy" set of sequences that can be sampled from regions near, but not containing,
+splice sites, or from intergenic regions. Users can define a buffer size, which
+will start decoy sampling a defined number of bases away from the splice site.
+
+Lastly, functions for calculating PPM, PWM, and PFM of the extracted sequences
+are included in `protisplice.motif_scoring`.
 
 ## Features
 
 - Extract true and decoy splice site sequences from GFF3 and FASTA files of any organism
-- Filter transcripts based on RNA-seq count data, as well as transcript type filtering (protein-coding)
 - Configurable extraction parameters (exon/intron lengths, buffer sizes)
+- Output extracted sequences to FASTA
+- Filtering transcripts on kallisto count data
 - Functions for calculating position weight, frequency, and probability matrices
 
 ## Installation
@@ -17,7 +26,7 @@ data for training splice site classifiers.
 
 ```bash
 git clone https://github.com/michael-bambha/protisplice.git
-cd splice-seq-extractor
+cd protisplice
 pip install -e .
 ```
 
@@ -28,6 +37,7 @@ pip install -e .
 - biopython ≥ 1.79
 - pandas ≥ 1.4
 - numpy ≥ 2.0
+- pytest (dev)
 
 ## Quick Start
 
@@ -40,7 +50,7 @@ from protisplice import SpliceSeqExtractor, ExtractionParams
 # Basic usage
 extractor = SpliceSeqExtractor(
     gff_path="annotations.gff3",
-    fasta_path="genome.fasta"  # Must be indexed with samtools faidx
+    fasta_path="genome.fasta"
 )
 
 # Write to FASTA files
@@ -56,18 +66,20 @@ print(f"Extracted {pos_count} positive and {neg_count} negative sequences")
 This method will split true splice sites and decoy splice sites into two separate files. 
 By default, `SpliceSeqExtractor` will find all available true splice sites, taking 40
 bases from the exon and 80 bases from the intron for default sequence length of 120.
+
 Additionally, the `SpliceSeqExtractor` class supports finding 'decoy' sequences by
-sampling each intron from within a transcript, and will attempt to return a sequence of 
-the same length as the true splice sites. Introns that are too short to reach identical
-length will be discarded by default. Lastly, users can define a `buffer_size` which will
-prohibit sampling of introns within `buffer_size` bases alongside either exon boundary.
+sampling introns and exons from within a transcript, and will attempt to return a sequence of 
+the same length as the true splice sites. Lastly, users can define a `buffer_size` which will prohibit 
+sampling of introns within `buffer_size` bases alongside either exon boundary. Note that when the `buffer_size` 
+is applied, certain introns or exons may too short to reach the desired window size, and will be discarded. 
+
 
 ## Advanced Usage
 
 ### Custom Parameters
 
 ```python
-from splice_seq_extractor import ExtractionParams, TranscriptFilter
+from protisplice import ExtractionParams, TranscriptFilter
 
 params = ExtractionParams(
     n_exon=50,      # Bases from exon region
@@ -113,7 +125,8 @@ decoy_ss = extractor.extract_negative_sequences(len(positive_sequences))
 # Access raw data
 transcripts = extractor.transcripts
 junctions = extractor.junctions
-stats = extractor.get_stats()
+info = extractor.get_info()
+print(info)
 ```
 
 ## File Format Requirements
@@ -156,13 +169,6 @@ GCTAGCTAGCTA...
 
 Header format: `>{seqid}_{junction_type}_{strand}_{start}_{end}`
 
-Please note that the junction type is somewhat elementary right now. Junction type
-is simply inferred from the position of the exon, so the first exon in a transcript
-is donor-only, the last exon is acceptor-only, and all exons in between
-are labeled as both donors and acceptors. Note that this is an inference from the GFF3
-and may not reflect biological reality in all cases due to alternative splicing.
-I plan to look into finding a more accurate way of inferring junction type metadata
-by including alternative splicing info in the future.
 
 ## Contributing
 

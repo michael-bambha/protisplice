@@ -5,6 +5,8 @@ Description: Module for sampling genomic regions (intergenic,
 exonic, and intronic).
 """
 
+# pylint:disable=no-member
+
 import random
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -18,8 +20,6 @@ from .data_models import (
     JunctionType,
     Transcript,
     Gene,
-    GenomicRegion,
-    RegionType,
     SamplingParams,
 )
 
@@ -39,6 +39,7 @@ class RegionalSampler:
         fai_path = Path(f"{self.fasta_path}.fai")
 
         if not fai_path.exists():
+            print(f"FASTA index {fasta_path} not found -- generating index...")
             pysam.faidx(fasta_path)
             print(f"FASTA index {fasta_path}.fai generated.")
 
@@ -80,15 +81,16 @@ class RegionalSampler:
     def sample_exonic_regions(
         self, transcripts: Dict[str, Transcript], target_count: int, seed: int = 100
     ) -> List[JunctionData]:
-        """_summary_
+        """Sample exons from a dictionary of transcripts.
 
         Args:
-            transcripts (Dict[str, Transcript]): _description_
-            target_count (int): _description_
-            seed (int, optional): _description_. Defaults to 100.
+            transcripts (Dict[str, Transcript]): Dict of transcript_id: Transcript
+            target_count (int): Max number of introns to sample
+            seed (int, optional): Random state. Defaults to 100.
 
         Returns:
-            List[JunctionData]: _description_
+            List[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
+            win_start: win_start, win_end: win_end, seq: seq}.
         """
         random.seed(seed)
         sequences = []
@@ -214,7 +216,7 @@ class RegionalSampler:
         intron_end: int,
         sample_index: int,
     ) -> Optional[JunctionData]:
-        """Sample sequence regions from introns from defined start/end coordinates.
+        """Sample sequence regions from a singular intron with defined start/end coordinates.
 
         Args:
             fasta (pysam.FastaFile): pysam FASTA object

@@ -5,8 +5,8 @@ Description: GFF3 parsing functionality
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Tuple, Optional
-from .data_models import Transcript, TranscriptInfo, StrandType, TranscriptFilter
+from typing import Dict, Tuple, Optional, List
+from .data_models import Transcript, Gene, TranscriptInfo, StrandType, TranscriptFilter
 from .expression import ExpressionFilter
 
 
@@ -67,6 +67,36 @@ class GFFParser:
             if transcript.exons
         }
 
+    def parse_genes(self) -> Dict[str, Gene]:
+        """_summary_
+
+        Returns:
+            Dict[str, Gene]: _description_
+        """
+        genes = {}
+
+        with open(self.gff_path, "r", encoding="utf-8") as file:
+            for line in file:
+                if line.startswith("#") or not line.strip():
+                    continue
+
+                fields = line.strip().split("\t")
+                if len(fields) < 9 or fields[2] != "gene":
+                    continue
+
+                gene_data = self._parse_gene_line(fields)
+                if gene_data:
+                    gene_id, seqid, start, end, strand = gene_data
+                    genes[gene_id] = Gene(
+                        gene_id=gene_id,
+                        seq_id=seqid,
+                        start=start,
+                        end=end,
+                        strand=StrandType(strand),
+                    )
+
+        return genes
+
     def _parse_gff_line(
         self, line: str, transcript_biotypes: Dict[str, str]
     ) -> Optional[Tuple]:
@@ -113,6 +143,34 @@ class GFFParser:
             )
 
             return transcript_id, seqid, start, end, strand
+
+        except (ValueError, IndexError):
+            return None
+
+    def _parse_gene_line(
+        self, fields: List[str]
+    ) -> Optional[Tuple[str, str, int, int, str]]:
+        """_summary_
+
+        Args:
+            fields (List[str]): _description_
+
+        Returns:
+            Optional[Tuple[str, str, int, int, str]]: _description_
+        """
+        try:
+            attrs = self._extract_gff_attrs(fields[8])
+            gene_id = attrs.get("ID", "")
+            if not gene_id:
+                return None
+            gene_id = ExpressionFilter.normalize_transcript_id(gene_id)
+
+            seqid = fields[0]
+            start = int(fields[3])
+            end = int(fields[4])
+            strand = StrandType(fields[6])
+
+            return gene_id, seqid, start, end, strand
 
         except (ValueError, IndexError):
             return None

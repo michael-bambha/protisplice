@@ -95,7 +95,6 @@ class Gene:
     start: int
     end: int
     strand: StrandType
-    transcripts: List[str]  # List of transcript IDs
 
 
 @dataclass
