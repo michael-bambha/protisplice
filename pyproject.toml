@@ -60,3 +60,8 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 protisplice = ["py.typed"]
+
+[tool.uv.workspace]
+members = [
+    "src",
+]

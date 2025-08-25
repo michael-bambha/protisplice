@@ -21,6 +21,16 @@ class JunctionType(Enum):
     DONOR = "donor"
     ACCEPTOR = "acceptor"
     INTRON = "intron"
+    EXON = "exon"
+    INTERGENIC = "intergenic"
+
+
+class RegionType(Enum):
+    """Enum for genomic region types for sampling"""
+
+    INTRON = "intron"
+    EXON = "exon"
+    INTERGENIC = "intergenic"
 
 
 class TranscriptFilter(Enum):
@@ -77,6 +87,44 @@ class Transcript:
 
 
 @dataclass
+class Gene:
+    """Data class for Gene information"""
+
+    gene_id: str
+    seq_id: str
+    start: int
+    end: int
+    strand: StrandType
+    transcripts: List[str]  # List of transcript IDs
+
+
+@dataclass
+class SamplingParams:
+    """Parameters for region sampling"""
+
+    window_size: int = 120
+    buffer_size: int = 50
+
+    def __post_init__(self):
+        if self.window_size <= 0:
+            raise ValueError("Window size must be positive!")
+        if self.buffer_size < 0:
+            raise ValueError("Buffer size must be non-negative!")
+
+
+@dataclass
+class GenomicRegion:
+    """Data class for genomic regions (genes, intergenic regions)"""
+
+    seqid: str
+    start: int
+    end: int
+    strand: StrandType
+    region_type: RegionType
+    gene_id: Optional[str] = None
+
+
+@dataclass
 class ExtractionParams:
     """Parameters for sequence extraction"""
 
@@ -114,6 +162,8 @@ class ExtractionResults:
 
     positive_sequences: Optional[List[JunctionData]] = None
     negative_sequences: Optional[List[JunctionData]] = None
+    exonic_sequences: Optional[List[JunctionData]] = None
+    intergenic_sequences: Optional[List[JunctionData]] = None
 
     @property
     def positive_count(self) -> int:
@@ -124,6 +174,16 @@ class ExtractionResults:
     def negative_count(self) -> int:
         """Number of negative sequences"""
         return len(self.negative_sequences) if self.negative_sequences else 0
+
+    @property
+    def exonic_count(self) -> int:
+        """Number of exonic sequences"""
+        return len(self.exonic_sequences) if self.exonic_sequences else 0
+
+    @property
+    def intergenic_count(self) -> int:
+        """Number of intergenic sequences"""
+        return len(self.intergenic_sequences) if self.intergenic_sequences else 0
 
     @property
     def total_count(self) -> int:

@@ -8,7 +8,6 @@ sequences around splice sites to be used for downstream model training.
 
 # pylint:disable=no-member
 
-import random
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import pysam
@@ -21,6 +20,67 @@ from .data_models import (
     Transcript,
     ExtractionParams,
 )
+
+
+def add_intron_coords(transcripts: Dict[str, Transcript]) -> Dict[str, Transcript]:
+    """Adds introns to Transcript object.
+
+    Args:
+        transcripts (Dict[str, Transcript]): Dict of ID: Transcript. Transcript
+        introns are initialized to None
+
+    Returns:
+        Dict[str, Transcript]: Dict of transcript_id: Transcript. Transcript object:
+        {{TranscriptInfo: seqid, strand}, {exons: List[start, end]},
+        {introns: List[start, end] = None}}
+    """
+    for transcript in transcripts.values():
+        introns = []
+        sorted_exons = sorted(transcript.exons, key=lambda x: x[0])
+
+        for i in range(len(sorted_exons) - 1):
+            intron_start = sorted_exons[i][1] + 1
+            intron_end = sorted_exons[i + 1][0] - 1
+
+            if intron_start <= intron_end:
+                introns.append((intron_start, intron_end))
+
+        transcript.introns = introns
+    return transcripts
+
+
+def extract_sequence(
+    fasta: pysam.FastaFile, seq_id: str, win_start: int, win_end: int
+) -> Optional[str]:
+    """Uses Pysam's FastaFile.fetch() to find the sequence of an indexed
+    FASTA file. Takes in 1-based start and end coordinates, converts to
+    0-based for Pysam compatability, then fetches the sequence.
+
+    Args:
+        fasta (pysam.FastaFile): pysam FastaFile object, built from indexed FASTA
+        seq_id (str): Reference ID for the FASTA ID (must match reference)
+        win_start (int): 1-based inclusive start of the sequence
+        win_end (int): 1-based exclusive end of the sequence
+
+    Returns:
+        Optional[str]: String of the fetched sequence, or None if coordinates
+        are not valid, or if sequence ID not found in references.
+    """
+    if win_start > win_end or win_start < 1:
+        return None
+
+    if seq_id not in fasta.references:
+        return None
+
+    seq_len = fasta.get_reference_length(seq_id)
+    win_start_0based = max(0, win_start - 1)  # pysam needs 0-based for fetch
+    win_end_0based = min(win_end, seq_len)  # pysam end is exclusive
+
+    if win_start_0based >= win_end_0based:
+        return None
+
+    extracted = fasta.fetch(seq_id, win_start_0based, win_end_0based)
+    return extracted
 
 
 class SequenceExtractor:
@@ -60,41 +120,6 @@ class SequenceExtractor:
                 junction_data = self._process_junction(fasta, junction)
                 if junction_data:
                     sequences.append(junction_data)
-
-        return sequences
-
-    def sample_introns(
-        self, transcripts: Dict[str, Transcript], target_count: int, seed: int = 100
-    ) -> List[JunctionData]:
-        """Sample introns from transcripts.
-        Args:
-            transcripts (Dict[str, Transcript]): Dict of transcript_id: Transcript
-            target_count (int): Max number of introns to sample
-            seed (int, optional): Random state. Defaults to 100.
-
-        Returns:
-            List[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
-            win_start: win_start, win_end: win_end, seq: seq}.
-        """
-        random.seed(seed)
-        sequences = []
-
-        # Add intron coordinates to transcripts
-        transcripts_with_introns = self._add_intron_coords(transcripts)
-
-        with pysam.FastaFile(str(self.fasta_path)) as fasta:
-            transcript_ids = list(transcripts_with_introns.keys())
-            random.shuffle(transcript_ids)
-
-            for transcript_id in transcript_ids:
-                if len(sequences) >= target_count:
-                    break
-
-                transcript = transcripts_with_introns[transcript_id]
-                extracted = self._sample_from_transcript(
-                    fasta, transcript_id, transcript, target_count - len(sequences)
-                )
-                sequences.extend(extracted)
 
         return sequences
 
@@ -176,167 +201,3 @@ class SequenceExtractor:
                 return start, end
 
         return None, None
-
-    def _extract_sequence(
-        self, fasta: pysam.FastaFile, seq_id: str, win_start: int, win_end: int
-    ) -> Optional[str]:
-        """Uses Pysam's FastaFile.fetch() to find the sequence of an indexed
-        FASTA file. Takes in 1-based start and end coordinates, converts to
-        0-based for Pysam compatability, then fetches the sequence.
-
-        Args:
-            fasta (pysam.FastaFile): pysam FastaFile object, built from indexed FASTA
-            seq_id (str): Reference ID for the FASTA ID (must match reference)
-            win_start (int): 1-based inclusive start of the sequence
-            win_end (int): 1-based exclusive end of the sequence
-
-        Returns:
-            Optional[str]: String of the fetched sequence, or None if coordinates
-            are not valid, or if sequence ID not found in references.
-        """
-        if win_start > win_end or win_start < 1:
-            return None
-
-        if seq_id not in fasta.references:
-            return None
-
-        seq_len = fasta.get_reference_length(seq_id)
-        win_start_0based = max(0, win_start - 1)  # pysam needs 0-based for fetch
-        win_end_0based = min(win_end, seq_len)  # pysam end is exclusive
-
-        if win_start_0based >= win_end_0based:
-            return None
-
-        extracted = fasta.fetch(seq_id, win_start_0based, win_end_0based)
-        return extracted
-
-    def _add_intron_coords(
-        self, transcripts: Dict[str, Transcript]
-    ) -> Dict[str, Transcript]:
-        """Adds introns to Transcript object.
-
-        Args:
-            transcripts (Dict[str, Transcript]): Dict of ID: Transcript. Transcript
-            introns are initialized to None
-
-        Returns:
-            Dict[str, Transcript]: Dict of transcript_id: Transcript. Transcript object:
-            {{TranscriptInfo: seqid, strand}, {exons: List[start, end]},
-            {introns: List[start, end] = None}}
-        """
-        for transcript in transcripts.values():
-            introns = []
-            sorted_exons = sorted(transcript.exons, key=lambda x: x[0])
-
-            for i in range(len(sorted_exons) - 1):
-                intron_start = sorted_exons[i][1] + 1
-                intron_end = sorted_exons[i + 1][0] - 1
-
-                if intron_start <= intron_end:
-                    introns.append((intron_start, intron_end))
-
-            transcript.introns = introns
-        return transcripts
-
-    def _sample_from_transcript(
-        self,
-        fasta: pysam.FastaFile,
-        transcript_id: str,
-        transcript: Transcript,
-        max_samples: int,
-    ) -> List[JunctionData]:
-        """Sample introns of a transcript. Can also provide a maximum cap on the number of samples,
-        but if downstream buffer_size is moderate to high, then max_samples will not be reached.
-
-        Args:
-            fasta (pysam.FastaFile): pysam FastaFile object
-            transcript_id (str): ID of transcript
-            transcript (Transcript): Transcript data class
-            max_samples (int): maximum cap on # samples to obtain
-
-        Returns:
-            List[JunctionData]: List of Dict in the format {junction: SpliceJunction,
-            win_start: win_start, win_end: win_end, seq: seq}.
-        """
-        if not transcript.introns:
-            return []
-
-        sequences = []
-
-        for intron_start, intron_end in transcript.introns:
-            if len(sequences) >= max_samples:
-                break
-
-            junction_data = self._sample_from_intron(
-                fasta,
-                transcript_id,
-                transcript,
-                intron_start,
-                intron_end,
-                len(sequences),
-            )
-            if junction_data:
-                sequences.append(junction_data)
-
-        return sequences
-
-    def _sample_from_intron(
-        self,
-        fasta: pysam.FastaFile,
-        transcript_id: str,
-        transcript: Transcript,
-        intron_start: int,
-        intron_end: int,
-        sample_index: int,
-    ) -> Optional[JunctionData]:
-        """Sample sequence regions from introns from defined start/end coordinates.
-
-        Args:
-            fasta (pysam.FastaFile): pysam FASTA object
-            transcript_id (str): ID of transcript
-            transcript (Transcript): Transcript data class
-            intron_start (int): Desired start coordinate
-            intron_end (int): Desired end coordinate
-            sample_index (int): Number of the intron ordered 5' to 3'.
-
-        Returns:
-            Optional[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
-            win_start: win_start, win_end: win_end, seq: seq}.
-        """
-        # apply the buffer size to shrink possible start/end locations
-        safe_start = intron_start + self.params.buffer_size
-        safe_end = intron_end - self.params.buffer_size
-
-        if safe_end - safe_start + 1 < self.params.window_size:
-            return None
-
-        # random sampling within buffered region
-        max_start = safe_end - self.params.window_size + 1
-        if safe_start > max_start:
-            return None
-
-        rand_start = random.randint(safe_start, max_start)
-        rand_end = rand_start + self.params.window_size - 1
-
-        seq = self._extract_sequence(fasta, transcript.info.seqid, rand_start, rand_end)
-        if not seq:
-            return None
-
-        if transcript.info.strand == StrandType.NEGATIVE:
-            seq = str(Seq(seq).reverse_complement())
-
-        # create pseudo-junction for consistent output format
-        pseudo_junction = SpliceJunction(
-            id=f"{transcript_id}_intron_{sample_index + 1}",
-            seqid=transcript.info.seqid,
-            coord=rand_start,
-            strand=transcript.info.strand,
-            junction_type=JunctionType.INTRON,
-        )
-
-        return JunctionData(
-            junction=pseudo_junction,
-            window_start=rand_start,
-            window_end=rand_end,
-            sequence=seq,
-        )
