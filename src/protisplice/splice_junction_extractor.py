@@ -4,7 +4,6 @@ Description: Splice junction extraction logic
 """
 
 from typing import Dict, List
-
 from .data_models import SpliceJunction, JunctionType, StrandType, Transcript
 
 

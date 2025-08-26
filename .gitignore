@@ -186,3 +186,4 @@ cython_debug/
 *.gct.gz
 .benchmarks
 data/ 
+test.ipynb

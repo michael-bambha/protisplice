@@ -5,7 +5,8 @@ Contact: bambha.m@northeastern.edu
 Description: Main SpliceSeqExtractor class for splice sequence extraction.
 Users can define a window of bases into the intron and exon regions of an
 identified splice junction and extract out the sequence. Additionally,
-methods for randomly sampling introns of transcripts are provided.
+methods for randomly sampling introns, exons, and intergenic regions
+are included.
 """
 
 from typing import Dict, List, Optional, Tuple
@@ -157,7 +158,8 @@ class SpliceSeqExtractor:
         """Find sequences around true splice sites.
 
         Returns:
-            List[JunctionData]:  List of JunctionData objects with splice site sequences
+            List[JunctionData]:  List of {junction: SpliceJunction, win_start: win_start,
+            win_end: win_end, sequence: sequence}
         """
         return self.sequence_extractor.extract_splice_sites(self.junctions)
 
@@ -168,10 +170,11 @@ class SpliceSeqExtractor:
 
         Args:
             target_count (int): Maximum number of introns to sample
-            random_seed (Optional[int], optional): _description_. Defaults to None.
+            random_seed (Optional[int], optional): Random state. Defaults to None.
 
         Returns:
-            List[JunctionData]: _description_
+            List[JunctionData]: List of {junction: SpliceJunction, win_start: win_start,
+            win_end: win_end, sequence: sequence}
         """
         return self.regional_sampler.sample_introns(
             self.transcripts, target_count, random_seed
@@ -180,14 +183,15 @@ class SpliceSeqExtractor:
     def extract_exonic_sequences(
         self, target_count: int, seed: int = 100
     ) -> List[JunctionData]:
-        """_summary_
+        """Sample exonic regions within a defined buffer region.
 
         Args:
-            target_count (int): _description_
-            seed (int, optional): _description_. Defaults to 100.
+            target_count (int): Maximum number of exons to sample
+            seed (int, optional): Random state. Defaults to 100.
 
         Returns:
-            List[JunctionData]: _description_
+            List[JunctionData]: List of {junction: SpliceJunction, win_start: win_start,
+            win_end: win_end, sequence: sequence}
         """
         return self.regional_sampler.sample_exonic_regions(
             self.transcripts, target_count, seed
@@ -196,14 +200,15 @@ class SpliceSeqExtractor:
     def extract_intergenic_sequences(
         self, target_count: int, seed: int = 100
     ) -> List[JunctionData]:
-        """_summary_
+        """Sample intergenic regions of a defined length.
 
         Args:
-            target_count (int): _description_
-            seed (int, optional): _description_. Defaults to 100.
+            target_count (int): Number of sequences to sample
+            seed (int, optional): Random state. Defaults to 100.
 
         Returns:
-            List[JunctionData]: _description_
+            List[JunctionData]: List of {junction: SpliceJunction, win_start: win_start,
+            win_end: win_end, sequence: sequence}
         """
         return self.regional_sampler.sample_intergenic_regions(
             self.genes, self.chromosome_lengths, target_count, seed
@@ -214,8 +219,25 @@ class SpliceSeqExtractor:
         results: ExtractionResults,
         positive_output: Optional[str] = None,
         negative_output: Optional[str] = None,
-    ) -> Optional[Tuple]:
-        """Write sequences to FASTA files"""
+    ) -> Optional[Tuple[int, int]]:
+        """Write out JunctionData objects to FASTA format files.
+        Separate files are created for true splice sites and decoy
+        sites (randomly sampled intron/exon/intergenic sites).
+
+        Args:
+            results (ExtractionResults): Dict of sequence types: List[JunctionData].
+            e.g. "intergenic_sequences": List[JunctionData] containing the
+            extracted intergenic sequences.
+
+            positive_output (Optional[str], optional): Output path for true splice sites.
+            Defaults to None.
+            negative_output (Optional[str], optional): Output path for decoy splice sites.
+            Defaults to None.
+
+        Returns:
+            Optional[Tuple[int, int]]: Count of the number of sequences written out
+            or None if nothing is passed in.
+        """
         return FastaWriter.write_results(results, positive_output, negative_output)
 
     def get_info(self) -> Dict[str, int]:

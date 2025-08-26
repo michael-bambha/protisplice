@@ -5,7 +5,7 @@ Description: Data classes for sequence extraction
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Tuple, Optional, Any, TextIO
+from typing import List, Tuple, Optional
 
 
 class StrandType(Enum):
@@ -20,14 +20,6 @@ class JunctionType(Enum):
 
     DONOR = "donor"
     ACCEPTOR = "acceptor"
-    INTRON = "intron"
-    EXON = "exon"
-    INTERGENIC = "intergenic"
-
-
-class RegionType(Enum):
-    """Enum for genomic region types for sampling"""
-
     INTRON = "intron"
     EXON = "exon"
     INTERGENIC = "intergenic"
@@ -62,7 +54,7 @@ class JunctionData:
     sequence: Optional[str] = None
 
     def to_fasta_header(self) -> str:
-        """Create FASTA header for the splice junction"""
+        """Create FASTA header for the splice junction metadata"""
         return (
             f">{self.junction.seqid}_{self.junction.junction_type.value}_"
             f"{self.junction.strand.value}_{self.window_start}_{self.window_end}"
@@ -109,18 +101,6 @@ class SamplingParams:
             raise ValueError("Window size must be positive!")
         if self.buffer_size < 0:
             raise ValueError("Buffer size must be non-negative!")
-
-
-@dataclass
-class GenomicRegion:
-    """Data class for genomic regions (genes, intergenic regions)"""
-
-    seqid: str
-    start: int
-    end: int
-    strand: StrandType
-    region_type: RegionType
-    gene_id: Optional[str] = None
 
 
 @dataclass
@@ -188,33 +168,3 @@ class ExtractionResults:
     def total_count(self) -> int:
         """Total number of sequences"""
         return self.positive_count + self.negative_count
-
-    def get_stats(self) -> Dict[str, int]:
-        """Get extraction statistics"""
-        return {
-            "positive_count": self.positive_count,
-            "negative_count": self.negative_count,
-            "total_count": self.total_count,
-            "has_positive": self.positive_sequences is not None,
-            "has_negative": self.negative_sequences is not None,
-        }
-
-
-@dataclass
-class NegativeSamplingContext:
-    """Context for negative sample extraction"""
-
-    file: TextIO
-    fasta: Any  # pysam.FastaFile
-    window_size: int
-    remaining_samples: int
-    samples_written: int = 0
-
-
-@dataclass
-class SequenceWindow:
-    """Sequence and its window coordinates"""
-
-    sequence: str
-    start: int
-    end: int

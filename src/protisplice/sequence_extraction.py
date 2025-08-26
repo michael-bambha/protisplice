@@ -95,9 +95,9 @@ class SequenceExtractor:
 
         fai_path = Path(f"{self.fasta_path}.fai")
         if not fai_path.exists():
-            raise FileNotFoundError(
-                f"FASTA index {fai_path} not found. Run samtools faidx."
-            )
+            print(f"FASTA index not found -- indexing {fasta_path}...")
+            pysam.faidx(fasta_path)
+            print(f"FASTA index {fasta_path}.fai created!")
 
     def extract_splice_sites(
         self, junctions: List[SpliceJunction]
@@ -146,11 +146,10 @@ class SequenceExtractor:
         if win_start is None or win_end is None:
             return None
 
-        seq = self._extract_sequence(fasta, junction.seqid, win_start, win_end)
+        seq = extract_sequence(fasta, junction.seqid, win_start, win_end)
         if not seq:
             return None
 
-        # Get reverse complement for negative strand
         if junction.strand == StrandType.NEGATIVE:
             seq = str(Seq(seq).reverse_complement())
 

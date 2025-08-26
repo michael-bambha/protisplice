@@ -1,6 +1,7 @@
 """
 File: gff_parser.py
-Description: GFF3 parsing functionality
+Description: Functionality for parsing genes and transcripts from GFF3
+files.
 """
 
 from collections import defaultdict
@@ -68,10 +69,12 @@ class GFFParser:
         }
 
     def parse_genes(self) -> Dict[str, Gene]:
-        """_summary_
+        """Parses a GFF3 file and obtains all genes found into a dictionary
+        of gene_id: Gene. Gene object contains the sequence ID (generally the chromosome), start
+        and end coordinates (1-based), and strand.
 
         Returns:
-            Dict[str, Gene]: _description_
+            Dict[str, Gene]: Dict of gene_id: Gene object.
         """
         genes = {}
 

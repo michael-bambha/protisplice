@@ -274,12 +274,13 @@ class RegionalSampler:
         """_summary_
 
         Args:
-            fasta (pysam.FastaFile): _description_
+            fasta (pysam.FastaFile): pysam FASTA object
             exon_data (dict): _description_
-            sample_index (int): _description_
+            sample_index (int): Number of the exon from 5' to 3'
 
         Returns:
-            Optional[JunctionData]: _description_
+            Optional[JunctionData]: Dict in the format {junction: SpliceJunction,
+            win_start: win_start, win_end: win_end, seq: seq}.
         """
         exon_start = exon_data["start"]
         exon_end = exon_data["end"]
@@ -335,7 +336,8 @@ class RegionalSampler:
             sample_index (int): _description_
 
         Returns:
-            Optional[JunctionData]: _description_
+            Optional[JunctionData]: Dict in the format {junction: SpliceJunction,
+            win_start: win_start, win_end: win_end, seq: seq}.
         """
         region_start, region_end = region
 
@@ -395,26 +397,25 @@ class RegionalSampler:
         """
         intergenic_regions = {}
 
-        # Group genes by chromosome
+        # group genes by chromosome
         genes_by_chr = {}
         for gene in genes.values():
-            if gene.seqid not in genes_by_chr:
-                genes_by_chr[gene.seqid] = []
-            genes_by_chr[gene.seqid].append(gene)
+            if gene.seq_id not in genes_by_chr:
+                genes_by_chr[gene.seq_id] = []
+            genes_by_chr[gene.seq_id].append(gene)
 
         for seqid, chr_genes in genes_by_chr.items():
             if seqid not in chromosome_lengths:
                 continue
 
-            # Sort genes by start position
             sorted_genes = sorted(chr_genes, key=lambda x: x.start)
             regions = []
 
-            # Add region before first gene if it exists
+            # add region before first gene
             if sorted_genes and sorted_genes[0].start > 1:
                 regions.append((1, sorted_genes[0].start - 1))
 
-            # Add regions between genes
+            # add regions between genes
             for i in range(len(sorted_genes) - 1):
                 current_gene = sorted_genes[i]
                 next_gene = sorted_genes[i + 1]
@@ -422,7 +423,7 @@ class RegionalSampler:
                 if next_gene.start > current_gene.end + 1:
                     regions.append((current_gene.end + 1, next_gene.start - 1))
 
-            # Add region after last gene if it exists
+            # add region after last gene
             if sorted_genes and sorted_genes[-1].end < chromosome_lengths[seqid]:
                 regions.append((sorted_genes[-1].end + 1, chromosome_lengths[seqid]))
 

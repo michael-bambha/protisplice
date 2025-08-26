@@ -1,6 +1,8 @@
 """
 File: expression.py
-Description: Functionality of parsing and filtering transcripts from expression data
+Author: Michael Bambha
+Contact: bambha.m@northeastern.edu
+Description: Functionality of parsing and filtering transcripts from expression data.
 """
 
 import statistics
