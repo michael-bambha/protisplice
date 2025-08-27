@@ -128,16 +128,18 @@ class RegionalSampler:
         target_count: int,
         seed: int = 100,
     ) -> List[JunctionData]:
-        """_summary_
+        """Sample regions between genes, given a dictionary of genes,
+        and length of the chromosomes.
 
         Args:
-            genes (Dict[str, Gene]): _description_
-            chromosome_lengths (Dict[str, int]): _description_
-            target_count (int): _description_
-            seed (int, optional): _description_. Defaults to 100.
+            genes (Dict[str, Gene]): Dict of gene_id: Gene
+            chromosome_lengths (Dict[str, int]): Dict of chromosome ID: length
+            target_count (int): Number of sequences to sample
+            seed (int, optional): Random state. Defaults to 100.
 
         Returns:
-            List[JunctionData]: _description_
+            List[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
+            win_start: win_start, win_end: win_end, seq: seq}.
         """
         random.seed(seed)
         sequences = []
@@ -271,11 +273,18 @@ class RegionalSampler:
     def _sample_from_exon(
         self, fasta: pysam.FastaFile, exon_data: dict, sample_index: int
     ) -> Optional[JunctionData]:
-        """_summary_
+        """Sample a sequence from a random start position in an exon.
 
         Args:
             fasta (pysam.FastaFile): pysam FASTA object
-            exon_data (dict): _description_
+            exon_data (dict): {
+                        "transcript_id": transcript_id,
+                        "exon_index": i,
+                        "start": exon_start,
+                        "end": exon_end,
+                        "seqid": transcript.info.seqid,
+                        "strand": transcript.info.strand,
+                    }
             sample_index (int): Number of the exon from 5' to 3'
 
         Returns:
@@ -327,13 +336,14 @@ class RegionalSampler:
         region: Tuple[int, int],
         sample_index: int,
     ) -> Optional[JunctionData]:
-        """_summary_
+        """Given known coordinates, sample a sequence
+        from a random start position in an intergenic region.
 
         Args:
-            fasta (pysam.FastaFile): _description_
-            seqid (str): _description_
-            region (Tuple[int, int]): _description_
-            sample_index (int): _description_
+            fasta (pysam.FastaFile): pysam FASTA object
+            seqid (str): Name of the chromosome from FASTA header
+            region (Tuple[int, int]): Tuple of (start, end) coords
+            sample_index (int): Number of the intergenic region
 
         Returns:
             Optional[JunctionData]: Dict in the format {junction: SpliceJunction,
@@ -386,14 +396,17 @@ class RegionalSampler:
         genes: Dict[str, Gene],
         chromosome_lengths: Dict[str, int],
     ) -> Dict[str, List[Tuple[int, int]]]:
-        """_summary_
+        """Find intergenic regions, given a dictionary of genes
+        and the length of each chromosome.
 
         Args:
-            genes (Dict[str, Gene]): _description_
-            chromosome_lengths (Dict[str, int]): _description_
+            genes (Dict[str, Gene]): Dict of gene ID: Gene object
+            chromosome_lengths (Dict[str, int]): Dict of chromosome #: length
 
         Returns:
-            Dict[str, List[Tuple[int, int]]]: _description_
+            Dict[str, List[Tuple[int, int]]]: Dict of chromosome #: List[Tuple(
+            start, end)] where start, end are the start and end coordinates
+            of the intergenic region.
         """
         intergenic_regions = {}
 
@@ -432,10 +445,11 @@ class RegionalSampler:
         return intergenic_regions
 
     def get_chromosome_lengths(self) -> Dict[str, int]:
-        """_summary_
+        """Find the length of any FASTA sequence with pysam.
+        Implemented for finding chromosome lengths.
 
         Returns:
-            Dict[str, int]: _description_
+            Dict[str, int]: Dict of seq_id: length
         """
         lengths = {}
         with pysam.FastaFile(str(self.fasta_path)) as fasta:

@@ -1,6 +1,8 @@
 """
 File: data_models.py
-Description: Data classes for sequence extraction
+Author: Michael Bambha
+Contact: bambha.m@northeastern.edu
+Description: Data classes for sequence extraction.
 """
 
 from dataclasses import dataclass
@@ -133,38 +135,3 @@ class ExtractionParams:
     def window_size(self) -> int:
         """Total window size"""
         return self.n_exon + self.n_intron
-
-
-@dataclass
-class ExtractionResults:
-    """Results from sequence extraction"""
-
-    positive_sequences: Optional[List[JunctionData]] = None
-    negative_sequences: Optional[List[JunctionData]] = None
-    exonic_sequences: Optional[List[JunctionData]] = None
-    intergenic_sequences: Optional[List[JunctionData]] = None
-
-    @property
-    def positive_count(self) -> int:
-        """Number of positive sequences"""
-        return len(self.positive_sequences) if self.positive_sequences else 0
-
-    @property
-    def negative_count(self) -> int:
-        """Number of negative sequences"""
-        return len(self.negative_sequences) if self.negative_sequences else 0
-
-    @property
-    def exonic_count(self) -> int:
-        """Number of exonic sequences"""
-        return len(self.exonic_sequences) if self.exonic_sequences else 0
-
-    @property
-    def intergenic_count(self) -> int:
-        """Number of intergenic sequences"""
-        return len(self.intergenic_sequences) if self.intergenic_sequences else 0
-
-    @property
-    def total_count(self) -> int:
-        """Total number of sequences"""
-        return self.positive_count + self.negative_count

@@ -4,6 +4,7 @@ A Python package for extracting splice site sequences from any organism given
 a FASTA and GFF3 annotation file.
 
 Protisplice allows for straightforward dataset generation for splice site classifiers.
+
 In addition to locating true splice sites of any length, users can also generate
 a "decoy" set of sequences that can be sampled from regions near, but not containing,
 splice sites, or from intergenic regions. Users can define a buffer size, which
@@ -41,7 +42,7 @@ pip install -e .
 
 ## Quick Start
 
-For an additional tutorial, please see the included Jupyter notebook,
+For a more in-depth tutorial, please see the included Jupyter notebook,
 example_workflow.ipynb.
 
 ```python
@@ -53,24 +54,25 @@ extractor = SpliceSeqExtractor(
     fasta_path="genome.fasta"
 )
 
-# Write to FASTA files
-pos_count, neg_count = extractor.write_sequences_to_fasta(
-    results,
-    "positive_sequences.fasta",
-    "negative_sequences.fasta"
+true_ss = extractor.extract_splice_sites()
+
+exon_decoys = extractor.sample_exonic_regions()
+intronic_decoys = extractor.sample_intronic_regions()
+intergenic_seqs = extractor.sample_intergenic_regions()
 )
 
-print(f"Extracted {pos_count} positive and {neg_count} negative sequences")
+count = write_sequences(true_ss, "true_ss.fasta")
 ```
 
-This method will split true splice sites and decoy splice sites into two separate files. 
 By default, `SpliceSeqExtractor` will find all available true splice sites, taking 40
 bases from the exon and 80 bases from the intron for default sequence length of 120.
 
 Additionally, the `SpliceSeqExtractor` class supports finding 'decoy' sequences by
 sampling introns and exons from within a transcript, and will attempt to return a sequence of 
-the same length as the true splice sites. Lastly, users can define a `buffer_size` which will prohibit 
-sampling of introns within `buffer_size` bases alongside either exon boundary. Note that when the `buffer_size` 
+the same length as the true splice sites. 
+
+Lastly, users can define a `buffer_size` which will prohibit 
+sampling of introns/exons within `buffer_size` bases alongside either exon boundary. Note that when the `buffer_size` 
 is applied, certain introns or exons may too short to reach the desired window size, and will be discarded. 
 
 
@@ -115,19 +117,9 @@ Lastly, transcripts can be filtered out by count data. Currently, only kallisto
 format is supported for this, but more formats like Salmon will be added in the future.
 It is strongly recommended that the expression data be normalized for most workflows.
 
-### Step-by-Step Extraction
-
-```python
-# Extract positive and negative sequences separately
-true_ss  = extractor.extract_positive_sequences()
-decoy_ss = extractor.extract_negative_sequences(len(positive_sequences))
-
-# Access raw data
-transcripts = extractor.transcripts
-junctions = extractor.junctions
-info = extractor.get_info()
-print(info)
-```
+I was planning to add in some way of parsing VCFs in the future for detection of disrupted
+splice sites, so expression filtering may be useful in combination with this if I decide
+to go forward with that!
 
 ## File Format Requirements
 
@@ -138,7 +130,7 @@ print(info)
 
 ### FASTA File
 - Standard FASTA format
-- **Must be indexed** with `samtools faidx` before use
+- If the file is not indexed, a .fai index will be created with pysam
 - Sequence IDs must match those in GFF3 file
 
 ### Expression Files
@@ -169,14 +161,8 @@ GCTAGCTAGCTA...
 
 Header format: `>{seqid}_{junction_type}_{strand}_{start}_{end}`
 
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
+For decoy sequences, the `junction_type` will be either
+`intron`, `exon`, or `intergenic`.
 
 ## License
 

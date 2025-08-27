@@ -9,12 +9,11 @@ methods for randomly sampling introns, exons, and intergenic regions
 are included.
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from .data_models import (
     ExtractionParams,
     SamplingParams,
-    ExtractionResults,
     TranscriptFilter,
     SpliceJunction,
     JunctionData,
@@ -25,7 +24,6 @@ from .expression import ExpressionParser, ExpressionFilter
 from .gff_parser import GFFParser
 from .sequence_extraction import SequenceExtractor
 from .splice_junction_extractor import SpliceJunctionExtractor
-from .fasta_writer import FastaWriter
 from .regional_sampler import RegionalSampler
 
 
@@ -163,7 +161,7 @@ class SpliceSeqExtractor:
         """
         return self.sequence_extractor.extract_splice_sites(self.junctions)
 
-    def sample_introns(
+    def extract_intronic_regions(
         self, target_count: int, random_seed: Optional[int] = None
     ) -> List[JunctionData]:
         """Sample introns of extracted transcripts. Finds a
@@ -213,32 +211,6 @@ class SpliceSeqExtractor:
         return self.regional_sampler.sample_intergenic_regions(
             self.genes, self.chromosome_lengths, target_count, seed
         )
-
-    def write_sequences_to_fasta(
-        self,
-        results: ExtractionResults,
-        positive_output: Optional[str] = None,
-        negative_output: Optional[str] = None,
-    ) -> Optional[Tuple[int, int]]:
-        """Write out JunctionData objects to FASTA format files.
-        Separate files are created for true splice sites and decoy
-        sites (randomly sampled intron/exon/intergenic sites).
-
-        Args:
-            results (ExtractionResults): Dict of sequence types: List[JunctionData].
-            e.g. "intergenic_sequences": List[JunctionData] containing the
-            extracted intergenic sequences.
-
-            positive_output (Optional[str], optional): Output path for true splice sites.
-            Defaults to None.
-            negative_output (Optional[str], optional): Output path for decoy splice sites.
-            Defaults to None.
-
-        Returns:
-            Optional[Tuple[int, int]]: Count of the number of sequences written out
-            or None if nothing is passed in.
-        """
-        return FastaWriter.write_results(results, positive_output, negative_output)
 
     def get_info(self) -> Dict[str, int]:
         """Returns parameters and info about the extractor. Includes exon bases,

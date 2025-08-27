@@ -10,7 +10,6 @@ from .sequence_extraction import SequenceExtractor
 from .splice_junction_extractor import SpliceJunctionExtractor
 from .data_models import (
     ExtractionParams,
-    ExtractionResults,
     TranscriptFilter,
     SpliceJunction,
     JunctionData,
@@ -21,13 +20,12 @@ from .data_models import (
 )
 from .expression import ExpressionFilter, ExpressionParser
 from .gff_parser import GFFParser
-from .fasta_writer import FastaWriter
+from .fasta_writer import write_sequences
 from .motif_scoring import generate_ppm, generate_pfm, generate_pwm
 
 __all__ = [
     "SpliceSeqExtractor",
     "ExtractionParams",
-    "ExtractionResults",
     "TranscriptFilter",
     "Transcript",
     "TranscriptInfo",
@@ -35,7 +33,7 @@ __all__ = [
     "JunctionData",
     "JunctionType",
     "StrandType",
-    "FastaWriter",
+    "write_sequences",
     "ExpressionFilter",
     "ExpressionParser",
     "GFFParser",

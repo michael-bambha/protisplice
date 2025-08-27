@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "protisplice"
 version = "0.1.0"
-description = "A Python package for extracting splice site sequences from genomic data"
+description = "A Python package for extracting splice site sequences from any organism"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
@@ -49,7 +49,6 @@ docs = [
 
 [project.urls]
 Homepage = "https://github.com/michael-bambha/protisplice"
-Documentation = "https://splice-seq-extractor.readthedocs.io"
 Repository = "https://github.com/michael-bambha/protisplice/.git"
 "Bug Tracker" = "https://github.com/michael-bambha/protisplice/issues"
 
