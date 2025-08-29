@@ -23,12 +23,14 @@ class TestSequenceExtractor:
             SequenceExtractor("doesnotexist.fasta", extraction_params)
 
     def test_init_missing_index(self, temp_dir, extraction_params):
-        """Test that missing .fai raises FileNotFoundError"""
+        """Test that missing .fai creates new one"""
         fasta_path = temp_dir / "test.fasta"
+        fai_path = fasta_path.with_suffix(fasta_path.suffix + ".fai")
         fasta_path.write_text(">chr1\nATCG\n")
-
-        with pytest.raises(FileNotFoundError, match="FASTA index .* not found"):
-            SequenceExtractor(str(fasta_path), extraction_params)
+        assert not fai_path.exists()
+        SequenceExtractor(str(fasta_path), extraction_params)
+        assert fai_path.exists()
+        fai_path.unlink()
 
     def test_extract_splice_sites(
         self, test_fasta_file, extraction_params, sample_junctions

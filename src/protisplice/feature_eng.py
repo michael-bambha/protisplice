@@ -1,6 +1,8 @@
 """
 File: feature_eng.py
-Description: Module for generating features
+Description: Module for feature engineering and data augmentation.
+Includes functions for injecting or removing canonical motifs from
+splice sites to create stronger decoys.
 """
 
 from typing import Optional

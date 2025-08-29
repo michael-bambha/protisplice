@@ -21,7 +21,7 @@ def generate_ppm(seqs: List[Seq]) -> pd.DataFrame:
         pd.DataFrame: Pandas dataframe containing the probability for each sequence
     """
     motif = motifs.create(seqs)
-    counts_df = pd.DataFrame(motif.counts)
+    counts_df = pd.DataFrame.from_dict(motif.counts, orient="index")
     ppm = counts_df.div(counts_df.sum(axis=0), axis=1)
     return ppm
 
@@ -37,14 +37,13 @@ def generate_pfm(seqs: List[Seq]) -> pd.DataFrame:
         pd.DataFrame: Pandas dataframe containing the probability for each sequence
     """
     motif = motifs.create(seqs)
-    pfm = pd.DataFrame(motif.counts)
-    return pfm
+    pfm = pd.DataFrame.from_dict(motif.counts, orient="index")
+    return pfm.astype("int64")
 
 
 def generate_pwm(
     seqs: List[Seq],
     background_freq: Dict[str, float] = None,
-    epsilon: float = 1e-10,
 ) -> pd.DataFrame:
     """Generate a position weight matrix from a list of aligned sequences.
 
@@ -58,12 +57,20 @@ def generate_pwm(
     Returns:
         pd.DataFrame: Pandas dataframe containing the log-odds for each nucleotide at each position.
     """
+    motif = motifs.create(seqs)
+    counts_df = pd.DataFrame.from_dict(motif.counts, orient="index")
+
+    # add pseudocounts only if a column sum is zero
+    col_sums = counts_df.sum(axis=0)
+    col_sums = col_sums.replace(0, np.nan)  # mark zeros as NaN
+    ppm = counts_df.div(col_sums, axis=1)
+
+    # fill any NaN columns (where sum was 0) with uniform distribution
+    ppm = ppm.fillna(1.0 / len(counts_df))
+
     if background_freq is None:
-        background_freq = {'A': 0.25, 'G': 0.25, 'C': 0.25, 'T': 0.25}
-    bg = pd.Series(background_freq)
-    ppm = generate_ppm(seqs)
-    if not set(bg.index).issubset(set(ppm.index)):
-        ppm = ppm.T
-    ppm = ppm.loc[bg.index]
-    pwm = (ppm + epsilon).divide(bg, axis=0).apply(np.log2)
+        background_freq = {base: 0.25 for base in "ACGT"}
+
+    pwm = ppm.div(pd.Series(background_freq), axis=0).applymap(np.log2)
+
     return pwm

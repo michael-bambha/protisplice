@@ -17,6 +17,8 @@ from .data_models import (
     StrandType,
     Transcript,
     TranscriptInfo,
+    SamplingParams,
+    Gene
 )
 from .expression import ExpressionFilter, ExpressionParser
 from .gff_parser import GFFParser
@@ -37,6 +39,8 @@ __all__ = [
     "ExpressionFilter",
     "ExpressionParser",
     "GFFParser",
+    "Gene",
+    "SamplingParams",
     "SequenceExtractor",
     "SpliceJunctionExtractor",
     "generate_ppm",
