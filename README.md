@@ -10,8 +10,14 @@ a "decoy" set of sequences that can be sampled from regions near, but not contai
 splice sites, or from intergenic regions. Users can define a buffer size, which
 will start decoy sampling a defined number of bases away from the splice site.
 
-Lastly, functions for calculating PPM, PWM, and PFM of the extracted sequences
+Functions for calculating PPM, PWM, and PFM of the extracted sequences
 are included in `protisplice.motif_scoring`.
+
+Finally, functions for augmenting true splice sites and decoys can be found in
+`protisplice.feature_eng`. These functions can mutate the consensus sequences
+from true splice sites, as well as create consensus motifs for decoys. These
+functions may help in creating more difficult negatives for model training,
+which may improve the detection of false positives.
 
 ## Features
 
@@ -20,6 +26,7 @@ are included in `protisplice.motif_scoring`.
 - Output extracted sequences to FASTA
 - Filtering transcripts on kallisto count data
 - Functions for calculating position weight, frequency, and probability matrices
+- Augmentation to strip or add consensus splice motifs
 
 ## Installation
 

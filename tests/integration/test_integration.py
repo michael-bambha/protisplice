@@ -271,7 +271,7 @@ class TestPerformanceIntegration:
         end_time = time.time()
 
         # Should complete within reasonable time
-        assert end_time - start_time < 30  
+        assert end_time - start_time < 30
         # Results should be reasonable
         assert isinstance(transcripts, dict)
         assert isinstance(junctions, list)

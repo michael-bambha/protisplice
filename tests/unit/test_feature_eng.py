@@ -113,7 +113,7 @@ class TestRemoveConsensus:
             sequence="A" * 40 + "GT" + "T" * 38,
         )
 
-        result = remove_consensus(junction_data, JunctionType.DONOR)
+        result = remove_consensus(junction_data)
         # Should replace GT with some non-GT dinucleotide
         assert result[:40] == "A" * 40
         assert result[42:] == "T" * 38
@@ -136,7 +136,7 @@ class TestRemoveConsensus:
             sequence="A" * 38 + "AG" + "T" * 40,
         )
 
-        result = remove_consensus(junction_data, JunctionType.ACCEPTOR)
+        result = remove_consensus(junction_data)
         assert result[:38] == "A" * 38
         assert result[40:] == "T" * 40
         assert result[38:40] != "AG"
@@ -158,7 +158,7 @@ class TestRemoveConsensus:
         )
 
         result = remove_consensus(
-            junction_data, JunctionType.DONOR, only_if_present=False
+            junction_data, only_if_present=False
         )
         # Should still replace TT with non-GT dinucleotide
         assert result[:40] == "A" * 40
@@ -183,7 +183,7 @@ class TestRemoveConsensus:
         )
 
         result = remove_consensus(
-            junction_data, JunctionType.DONOR, only_if_present=True
+            junction_data, only_if_present=True
         )
         # Should remain unchanged
         assert result == junction_data.sequence
@@ -204,7 +204,7 @@ class TestRemoveConsensus:
             sequence="A" * 40 + "GT" + "T" * 38,
         )
 
-        result = remove_consensus(junction_data, JunctionType.DONOR, replacement="CC")
+        result = remove_consensus(junction_data, replacement="CC")
         expected = "A" * 40 + "CC" + "T" * 38
         assert result == expected
 
@@ -225,10 +225,10 @@ class TestRemoveConsensus:
         )
 
         with pytest.raises(ValueError, match="replacement must be a 2-mer"):
-            remove_consensus(junction_data, JunctionType.DONOR, replacement="GT")
+            remove_consensus(junction_data, replacement="GT")
 
         with pytest.raises(ValueError, match="replacement must be a 2-mer"):
-            remove_consensus(junction_data, JunctionType.DONOR, replacement="A")
+            remove_consensus(junction_data, replacement="A")
 
 
 class TestHelperFunctions:
@@ -248,7 +248,7 @@ class TestHelperFunctions:
         )
 
         idx = _get_consensus_index(junction_data, JunctionType.DONOR)
-        expected = junction.coord - junction_data.window_start  # 50 - 10 = 40
+        expected = junction.coord - junction_data.window_start + 1  # 50 - 10 = 41
         assert idx == expected
 
     def test_get_consensus_index_acceptor(self):
@@ -265,7 +265,7 @@ class TestHelperFunctions:
         )
 
         idx = _get_consensus_index(junction_data, JunctionType.ACCEPTOR)
-        expected = junction.coord - junction_data.window_start - 2  # 50 - 10 - 2 = 38
+        expected = junction.coord - junction_data.window_start + 1 - 2  # 50 - 10 - 2 = 39
         assert idx == expected
 
     def test_get_consensus_index_invalid_type_raises_error(self):

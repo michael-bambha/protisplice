@@ -24,6 +24,7 @@ from .expression import ExpressionFilter, ExpressionParser
 from .gff_parser import GFFParser
 from .fasta_writer import write_sequences
 from .motif_scoring import generate_ppm, generate_pfm, generate_pwm
+from .feature_eng import inject_consensus, remove_consensus
 
 __all__ = [
     "SpliceSeqExtractor",
@@ -46,6 +47,8 @@ __all__ = [
     "generate_ppm",
     "generate_pwm",
     "generate_pfm",
+    "inject_consensus",
+    "remove_consensus"
 ]
 
 __version__ = "0.1.0"
