@@ -7,6 +7,7 @@ splice sites to create stronger decoys.
 
 from typing import Optional
 import random
+from copy import deepcopy
 from .data_models import JunctionType, JunctionData, ExtractionParams
 
 
@@ -15,7 +16,7 @@ def inject_consensus(
     extraction_params: ExtractionParams,
     junc_type=JunctionType,
     idx: Optional[int] = None,
-) -> str:
+) -> JunctionData:
     """Replace the center indices of a sequence window with the donor or acceptor
     consensus sequence. Can be used for creating higher quality / harder decoy
     sequences.
@@ -28,9 +29,10 @@ def inject_consensus(
         For example...
 
     Returns:
-        str: Modified sequence with donor or acceptor consensus
+        JunctionData: New JunctionData with modified sequence with donor or acceptor consensus
     """
-    seq = junc.sequence
+    new_junc = deepcopy(junc)  # copy to not modify object in-place
+    seq = new_junc.sequence
     if idx is None:
         idx = _get_consensus_index(junc, extraction_params, junc_type)
     if idx < 0 or idx + 1 >= len(seq):
@@ -38,8 +40,9 @@ def inject_consensus(
             f"Consensus start idx {idx} out of bounds for sequence of length {len(seq)}"
         )
     consensus = _motif_for(junc_type)
-
-    return seq[:idx] + consensus + seq[idx + 2:]
+    new_seq = seq[:idx] + consensus + seq[idx + 2:]
+    new_junc.sequence = new_seq
+    return new_junc
 
 
 def remove_consensus(
@@ -49,7 +52,7 @@ def remove_consensus(
     *,
     only_if_present: bool = True,
     replacement: Optional[str] = None,
-) -> str:
+) -> JunctionData:
     """Destroy/remove the canonical dinucleotide at the junction to form a negative.
       - If only_if_present=True, will no-op unless the canonical motif is present.
       - If replacement is provided, it must be a 2-mer != canonical motif.
@@ -67,16 +70,21 @@ def remove_consensus(
     Raises:
         IndexError: If the index is less than zero or greater than the length
         of the sequence
+        ValueError: If both extraction_params and idx are None
         ValueError: If the replacement is not a string of length 2, or
         if the replacement is the same as the canonical motif.
 
     Returns:
-        str: Modified sequence with consensus motif mutated
+        JunctionData: New JunctionData with consensus motif mutated
     """
-    seq = junc.sequence
+    new_junc = deepcopy(junc)
+    seq = new_junc.sequence
     junc_type = junc.junction.junction_type
     mutant = "NN"
+
     if idx is None:
+        if extraction_params is None:
+            raise ValueError("extraction params required when idx is None")
         idx = _get_consensus_index(junc, extraction_params, junc_type)
     if idx < 0 or idx + 1 >= len(seq):
         raise IndexError(
@@ -84,10 +92,10 @@ def remove_consensus(
         )
 
     canonical = _motif_for(junc_type)
-    current = seq[idx: idx+2]
+    current = seq[idx: idx + 2]
 
     if only_if_present and current != canonical:
-        return seq  # leave as-is if not canonical here
+        return junc  # leave as-is if not canonical here
 
     if replacement is not None:
         if len(replacement) != 2 or replacement == canonical:
@@ -98,10 +106,24 @@ def remove_consensus(
     else:
         mutant = _pick_noncanon_dinuc(canonical)
 
-    return seq[:idx] + mutant + seq[idx + 2:]
+    new_seq = (
+        seq[:idx] + mutant + seq[idx + 2:]
+    )  # replace dinuc with mutant at correct pos
+    new_junc.sequence = new_seq
+    return new_junc
 
 
-def _pick_noncanon_dinuc(canonical: str):
+def _pick_noncanon_dinuc(canonical: str) -> str:
+    """Pick a random dinucleotide != the
+    passed in canonical motif
+
+    Args:
+        canonical (str): Canonical dinucleotide, either "AG" or "GT"
+
+    Returns:
+        str: Any random dinculeotide combination not equivalent
+        to what was passed in
+    """
     bases = "ACGT"
     while True:
         mutant = random.choice(bases) + random.choice(bases)
@@ -125,7 +147,6 @@ def _get_consensus_index(
     Returns:
         int: Start coordinate of the AG or GT dinucleotide
     """
-    # Need to add 1 since the index is 0-based and coord is 1-based
     exon_idx = extraction_params.n_exon
     if not junc_type:
         junc_type = junc.junction.junction_type
@@ -142,4 +163,12 @@ def _get_consensus_index(
 
 
 def _motif_for(junc_type: JunctionType) -> str:
+    """Return GT for donors, AG for acceptors
+
+    Args:
+        junc_type (JunctionType): Junction type (Donor or Acceptor)
+
+    Returns:
+        str: "GT" for donor, "AG" for acceptor
+    """
     return "GT" if junc_type == JunctionType.DONOR else "AG"

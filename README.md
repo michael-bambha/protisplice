@@ -1,9 +1,10 @@
 # Protisplice
 
-A Python package for extracting splice site sequences from any organism given
-a FASTA and GFF3 annotation file.
+**Extract splice site sequences for motif visualization and machine learning applications**
 
-Protisplice allows for straightforward dataset generation for splice site classifiers.
+A Python package for extracting splice site sequences from any organism given
+a FASTA and GFF3 annotation file. Protisplice allows for streamlined dataset generation
+for splice site classifiers.
 
 In addition to locating true splice sites of any length, users can also generate
 a "decoy" set of sequences that can be sampled from regions near, but not containing,
@@ -21,12 +22,12 @@ which may improve the detection of false positives.
 
 ## Features
 
-- Extract true and decoy splice site sequences from GFF3 and FASTA files of any organism
-- Configurable extraction parameters (exon/intron lengths, buffer sizes)
-- Output extracted sequences to FASTA
-- Filtering transcripts on kallisto count data
-- Functions for calculating position weight, frequency, and probability matrices
-- Augmentation to strip or add consensus splice motifs
+- **Flexible Extraction**: Extract true splice sites with configurable exon/intron window sizes
+- **Negative Dataset Generation**: Create decoy sequences from intronic, exonic, and intergenic regions
+- **Expression-based Filtering**: Filter transcripts using Kallisto or GTEx expression data
+- **Data Augmentation**: Add or remove consensus motifs for enhanced training datasets
+- **Motif Analysis**: Calculate position weight matrices (PWM), frequency matrices (PFM), and probability matrices (PPM)
+- **Multi-organism Support**: Works with any organism with GFF3 annotations
 
 ## Installation
 
@@ -53,7 +54,7 @@ For a more in-depth tutorial, please see the included Jupyter notebook,
 example_workflow.ipynb.
 
 ```python
-from protisplice import SpliceSeqExtractor, ExtractionParams
+from protisplice import SpliceSeqExtractor, write_sequences
 
 # Basic usage
 extractor = SpliceSeqExtractor(
@@ -61,12 +62,11 @@ extractor = SpliceSeqExtractor(
     fasta_path="genome.fasta"
 )
 
-true_ss = extractor.extract_splice_sites()
+true_ss = extractor.extract_splice_sites() 
 
 exon_decoys = extractor.sample_exonic_regions()
 intronic_decoys = extractor.sample_intronic_regions()
 intergenic_seqs = extractor.sample_intergenic_regions()
-)
 
 count = write_sequences(true_ss, "true_ss.fasta")
 ```
@@ -124,9 +124,6 @@ Lastly, transcripts can be filtered out by count data. Currently, only kallisto
 format is supported for this, but more formats like Salmon will be added in the future.
 It is strongly recommended that the expression data be normalized for most workflows.
 
-I was planning to add in some way of parsing VCFs in the future for detection of disrupted
-splice sites, so expression filtering may be useful in combination with this if I decide
-to go forward with that!
 
 ## File Format Requirements
 
@@ -164,12 +161,21 @@ ATCGATCGATCG...
 
 >chr2_acceptor_-_67890_68010
 GCTAGCTAGCTA...
+
+>chr1_exon_+_153773248_153773267
+CAGTGGGCTCTGACAGTGAC
 ```
 
 Header format: `>{seqid}_{junction_type}_{strand}_{start}_{end}`
 
 For decoy sequences, the `junction_type` will be either
 `intron`, `exon`, or `intergenic`.
+
+## Performance Considerations
+
+- FASTA files are indexed automatically for efficient random access
+- Memory usage scales with the number of transcripts and extracted sequences
+- Large genomes (>3GB) may require substantial RAM for optimal performance
 
 ## License
 

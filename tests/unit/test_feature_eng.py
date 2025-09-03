@@ -2,9 +2,16 @@
 File: test_feature_eng.py
 Description: Unit tests for feature engineering module
 """
+# pylint:disable=redefined-outer-name
 
 import pytest
-from protisplice import JunctionData, SpliceJunction, JunctionType, StrandType
+from protisplice import (
+    JunctionData,
+    SpliceJunction,
+    JunctionType,
+    StrandType,
+    ExtractionParams,
+)
 from protisplice.feature_eng import (
     inject_consensus,
     remove_consensus,
@@ -14,10 +21,16 @@ from protisplice.feature_eng import (
 )
 
 
+@pytest.fixture
+def extraction_params():
+    """Standard extraction parameters for testing"""
+    return ExtractionParams(n_exon=40, n_intron=80, buffer_size=50)
+
+
 class TestInjectConsensus:
     """Test consensus injection functionality"""
 
-    def test_inject_donor_consensus(self):
+    def test_inject_donor_consensus(self, extraction_params):
         """Test injecting donor consensus (GT)"""
         junction = SpliceJunction(
             id="test_donor",
@@ -29,15 +42,16 @@ class TestInjectConsensus:
         junction_data = JunctionData(
             junction=junction,
             window_start=10,
-            window_end=90,
-            sequence="A" * 40 + "NN" + "T" * 38,  # 80bp total
+            window_end=130,  # 120bp window
+            sequence="A" * 40 + "NN" + "T" * 78,  # 120bp total
         )
 
-        result = inject_consensus(junction_data, JunctionType.DONOR)
-        expected = "A" * 40 + "GT" + "T" * 38
-        assert result == expected
+        result = inject_consensus(junction_data, extraction_params, JunctionType.DONOR)
+        expected = "A" * 40 + "GT" + "T" * 78
+        assert result.sequence == expected
+        assert isinstance(result, JunctionData)
 
-    def test_inject_acceptor_consensus(self):
+    def test_inject_acceptor_consensus(self, extraction_params):
         """Test injecting acceptor consensus (AG)"""
         junction = SpliceJunction(
             id="test_acceptor",
@@ -49,15 +63,18 @@ class TestInjectConsensus:
         junction_data = JunctionData(
             junction=junction,
             window_start=10,
-            window_end=90,
-            sequence="A" * 38 + "NN" + "T" * 40,  # 80bp total
+            window_end=130,  # 120bp window
+            sequence="A" * 38 + "NN" + "T" * 80,  # 120bp total
         )
 
-        result = inject_consensus(junction_data, JunctionType.ACCEPTOR)
-        expected = "A" * 38 + "AG" + "T" * 40
-        assert result == expected
+        result = inject_consensus(
+            junction_data, extraction_params, JunctionType.ACCEPTOR
+        )
+        expected = "A" * 38 + "AG" + "T" * 80
+        assert result.sequence == expected
+        assert isinstance(result, JunctionData)
 
-    def test_inject_with_custom_index(self):
+    def test_inject_with_custom_index(self, extraction_params):
         """Test consensus injection with custom index"""
         junction = SpliceJunction(
             id="test",
@@ -67,14 +84,17 @@ class TestInjectConsensus:
             junction_type=JunctionType.DONOR,
         )
         junction_data = JunctionData(
-            junction=junction, window_start=10, window_end=90, sequence="A" * 80
+            junction=junction, window_start=10, window_end=130, sequence="A" * 120
         )
 
-        result = inject_consensus(junction_data, JunctionType.DONOR, idx=20)
-        expected = "A" * 20 + "GT" + "A" * 58
-        assert result == expected
+        result = inject_consensus(
+            junction_data, extraction_params, JunctionType.DONOR, idx=20
+        )
+        expected = "A" * 20 + "GT" + "A" * 98
+        assert result.sequence == expected
+        assert isinstance(result, JunctionData)
 
-    def test_inject_out_of_bounds_raises_error(self):
+    def test_inject_out_of_bounds_raises_error(self, extraction_params):
         """Test that out of bounds index raises IndexError"""
         junction = SpliceJunction(
             id="test",
@@ -86,18 +106,20 @@ class TestInjectConsensus:
         junction_data = JunctionData(
             junction=junction,
             window_start=10,
-            window_end=90,
+            window_end=14,
             sequence="ATCG",  # Only 4bp
         )
 
         with pytest.raises(IndexError, match="Consensus start idx .* out of bounds"):
-            inject_consensus(junction_data, JunctionType.DONOR, idx=10)
+            inject_consensus(
+                junction_data, extraction_params, JunctionType.DONOR, idx=10
+            )
 
 
 class TestRemoveConsensus:
     """Test consensus removal functionality"""
 
-    def test_remove_donor_consensus_when_present(self):
+    def test_remove_donor_consensus_when_present(self, extraction_params):
         """Test removing donor consensus when GT is present"""
         junction = SpliceJunction(
             id="test_donor",
@@ -109,18 +131,19 @@ class TestRemoveConsensus:
         junction_data = JunctionData(
             junction=junction,
             window_start=10,
-            window_end=90,
-            sequence="A" * 40 + "GT" + "T" * 38,
+            window_end=130,
+            sequence="A" * 40 + "GT" + "T" * 78,
         )
 
-        result = remove_consensus(junction_data)
+        result = remove_consensus(junction_data, extraction_params)
         # Should replace GT with some non-GT dinucleotide
-        assert result[:40] == "A" * 40
-        assert result[42:] == "T" * 38
-        assert result[40:42] != "GT"
-        assert len(result[40:42]) == 2
+        assert result.sequence[:40] == "A" * 40
+        assert result.sequence[42:] == "T" * 78
+        assert result.sequence[40:42] != "GT"
+        assert len(result.sequence[40:42]) == 2
+        assert isinstance(result, JunctionData)
 
-    def test_remove_acceptor_consensus_when_present(self):
+    def test_remove_acceptor_consensus_when_present(self, extraction_params):
         """Test removing acceptor consensus when AG is present"""
         junction = SpliceJunction(
             id="test_acceptor",
@@ -132,16 +155,17 @@ class TestRemoveConsensus:
         junction_data = JunctionData(
             junction=junction,
             window_start=10,
-            window_end=90,
-            sequence="A" * 38 + "AG" + "T" * 40,
+            window_end=130,
+            sequence="A" * 38 + "AG" + "T" * 80,
         )
 
-        result = remove_consensus(junction_data)
-        assert result[:38] == "A" * 38
-        assert result[40:] == "T" * 40
-        assert result[38:40] != "AG"
+        result = remove_consensus(junction_data, extraction_params)
+        assert result.sequence[:38] == "A" * 38
+        assert result.sequence[40:] == "T" * 80
+        assert result.sequence[38:40] != "AG"
+        assert isinstance(result, JunctionData)
 
-    def test_remove_consensus_only_if_present_false(self):
+    def test_remove_consensus_only_if_present_false(self, extraction_params):
         """Test removing consensus when only_if_present=False"""
         junction = SpliceJunction(
             id="test",
@@ -153,20 +177,21 @@ class TestRemoveConsensus:
         junction_data = JunctionData(
             junction=junction,
             window_start=10,
-            window_end=90,
-            sequence="A" * 40 + "TT" + "T" * 38,  # No GT present
+            window_end=130,
+            sequence="A" * 40 + "TT" + "T" * 78,  # No GT present
         )
 
         result = remove_consensus(
-            junction_data, only_if_present=False
+            junction_data, extraction_params, only_if_present=False
         )
         # Should still replace TT with non-GT dinucleotide
-        assert result[:40] == "A" * 40
-        assert result[42:] == "T" * 38
-        assert result[40:42] != "GT"
-        assert result[40:42] != "TT"  # Should be replaced
+        assert result.sequence[:40] == "A" * 40
+        assert result.sequence[42:] == "T" * 78
+        assert result.sequence[40:42] != "GT"
+        assert result.sequence[40:42] != "TT"  # Should be replaced
+        assert isinstance(result, JunctionData)
 
-    def test_remove_consensus_only_if_present_true_no_change(self):
+    def test_remove_consensus_only_if_present_true_no_change(self, extraction_params):
         """Test no change when consensus not present and only_if_present=True"""
         junction = SpliceJunction(
             id="test",
@@ -178,17 +203,19 @@ class TestRemoveConsensus:
         junction_data = JunctionData(
             junction=junction,
             window_start=10,
-            window_end=90,
-            sequence="A" * 40 + "TT" + "T" * 38,  # No GT present
+            window_end=130,
+            sequence="A" * 40 + "TT" + "T" * 78,  # No GT present
         )
+        original_sequence = junction_data.sequence
 
         result = remove_consensus(
-            junction_data, only_if_present=True
+            junction_data, extraction_params, only_if_present=True
         )
         # Should remain unchanged
-        assert result == junction_data.sequence
+        assert result.sequence == original_sequence
+        assert isinstance(result, JunctionData)
 
-    def test_remove_consensus_custom_replacement(self):
+    def test_remove_consensus_custom_replacement(self, extraction_params):
         """Test consensus removal with custom replacement"""
         junction = SpliceJunction(
             id="test",
@@ -200,15 +227,16 @@ class TestRemoveConsensus:
         junction_data = JunctionData(
             junction=junction,
             window_start=10,
-            window_end=90,
-            sequence="A" * 40 + "GT" + "T" * 38,
+            window_end=130,
+            sequence="A" * 40 + "GT" + "T" * 78,
         )
 
-        result = remove_consensus(junction_data, replacement="CC")
-        expected = "A" * 40 + "CC" + "T" * 38
-        assert result == expected
+        result = remove_consensus(junction_data, extraction_params, replacement="CC")
+        expected = "A" * 40 + "CC" + "T" * 78
+        assert result.sequence == expected
+        assert isinstance(result, JunctionData)
 
-    def test_invalid_replacement_raises_error(self):
+    def test_invalid_replacement_raises_error(self, extraction_params):
         """Test that invalid replacement raises ValueError"""
         junction = SpliceJunction(
             id="test",
@@ -220,21 +248,21 @@ class TestRemoveConsensus:
         junction_data = JunctionData(
             junction=junction,
             window_start=10,
-            window_end=90,
-            sequence="A" * 40 + "GT" + "T" * 38,
+            window_end=130,
+            sequence="A" * 40 + "GT" + "T" * 78,
         )
 
         with pytest.raises(ValueError, match="replacement must be a 2-mer"):
-            remove_consensus(junction_data, replacement="GT")
+            remove_consensus(junction_data, extraction_params, replacement="GT")
 
         with pytest.raises(ValueError, match="replacement must be a 2-mer"):
-            remove_consensus(junction_data, replacement="A")
+            remove_consensus(junction_data, extraction_params, replacement="A")
 
 
 class TestHelperFunctions:
     """Test helper functions"""
 
-    def test_get_consensus_index_donor(self):
+    def test_get_consensus_index_donor(self, extraction_params):
         """Test getting consensus index for donor site"""
         junction = SpliceJunction(
             id="test",
@@ -244,14 +272,14 @@ class TestHelperFunctions:
             junction_type=JunctionType.DONOR,
         )
         junction_data = JunctionData(
-            junction=junction, window_start=10, window_end=90, sequence="A" * 80
+            junction=junction, window_start=10, window_end=130, sequence="A" * 120
         )
 
-        idx = _get_consensus_index(junction_data, JunctionType.DONOR)
-        expected = junction.coord - junction_data.window_start + 1  # 50 - 10 = 41
+        idx = _get_consensus_index(junction_data, extraction_params, JunctionType.DONOR)
+        expected = extraction_params.n_exon  # Should be 40 for donor
         assert idx == expected
 
-    def test_get_consensus_index_acceptor(self):
+    def test_get_consensus_index_acceptor(self, extraction_params):
         """Test getting consensus index for acceptor site"""
         junction = SpliceJunction(
             id="test",
@@ -261,14 +289,16 @@ class TestHelperFunctions:
             junction_type=JunctionType.ACCEPTOR,
         )
         junction_data = JunctionData(
-            junction=junction, window_start=10, window_end=90, sequence="A" * 80
+            junction=junction, window_start=10, window_end=130, sequence="A" * 120
         )
 
-        idx = _get_consensus_index(junction_data, JunctionType.ACCEPTOR)
-        expected = junction.coord - junction_data.window_start + 1 - 2  # 50 - 10 - 2 = 39
+        idx = _get_consensus_index(
+            junction_data, extraction_params, JunctionType.ACCEPTOR
+        )
+        expected = extraction_params.n_exon - 2  # Should be 38 for acceptor
         assert idx == expected
 
-    def test_get_consensus_index_invalid_type_raises_error(self):
+    def test_get_consensus_index_invalid_type_raises_error(self, extraction_params):
         """Test that invalid junction type raises ValueError"""
         junction = SpliceJunction(
             id="test",
@@ -278,13 +308,34 @@ class TestHelperFunctions:
             junction_type=JunctionType.INTRON,  # Invalid for consensus
         )
         junction_data = JunctionData(
-            junction=junction, window_start=10, window_end=90, sequence="A" * 80
+            junction=junction, window_start=10, window_end=130, sequence="A" * 120
         )
 
         with pytest.raises(
             ValueError, match="Junction type must be either donor or acceptor"
         ):
-            _get_consensus_index(junction_data, JunctionType.INTRON)
+            _get_consensus_index(junction_data, extraction_params, JunctionType.INTRON)
+
+    def test_get_consensus_index_uses_junction_type_when_none_provided(
+        self, extraction_params
+    ):
+        """Test that function uses junction's type when no junc_type parameter provided"""
+        junction = SpliceJunction(
+            id="test",
+            seqid="chr1",
+            coord=50,
+            strand=StrandType.POSITIVE,
+            junction_type=JunctionType.DONOR,
+        )
+        junction_data = JunctionData(
+            junction=junction, window_start=10, window_end=130, sequence="A" * 120
+        )
+
+        idx = _get_consensus_index(
+            junction_data, extraction_params
+        )  # No junc_type provided
+        expected = extraction_params.n_exon  # Should use DONOR from junction
+        assert idx == expected
 
     def test_motif_for_donor(self):
         """Test getting motif for donor"""
