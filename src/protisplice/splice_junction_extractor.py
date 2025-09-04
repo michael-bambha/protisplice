@@ -13,7 +13,23 @@ class SpliceJunctionExtractor:
     def identify_splice_junctions(
         self, transcripts: Dict[str, Transcript]
     ) -> List[SpliceJunction]:
-        """Get splice junction coordinates from transcripts"""
+        """Takes in a dictionary of transcripts and returns a list
+        of SpliceJunction objects, which contains the id of the parent sequence,
+        the transcript ID, 1-based coordinate of the first exon base, and
+        the strand.
+
+        Args:
+            transcripts (Dict[str, Transcript]): Dict of transcript ID: Transcript object.
+            Transcript objects contain a list of tuples of exon start/end coordinates,
+            list of tuples of intron start/end coordinates, and a dictionary containing
+            the transcript ID and strand.
+
+
+        Returns:
+            List[SpliceJunction]: List of SpliceJunction objects, which contains the
+            id of the parent sequence, the transcript ID, 1-based coordinate of the first
+            exon base, and the strand.
+        """
         junctions = []
 
         for transcript_id, transcript in transcripts.items():
@@ -32,7 +48,19 @@ class SpliceJunctionExtractor:
     def _create_junctions_for_transcript(
         self, transcript_id: str, transcript: Transcript, sorted_exons: List[tuple]
     ) -> List[SpliceJunction]:
-        """Create junction objects for a single transcript"""
+        """Create SpliceJunction objects for a single transcript
+
+        Args:
+            transcript_id (str): ID of the transcript
+            transcript (Transcript): Transcript object
+            sorted_exons (List[tuple]): Sorted list of exon start, end coords.
+            (1-based)
+
+        Returns:
+            List[SpliceJunction]: List of SpliceJunction objects for one transcript, which
+            contains the id of the parent sequence, the transcript ID, 1-based coordinate
+            of the first exon base, and the strand.
+        """
         junctions = []
 
         for i, (exon_start, exon_end) in enumerate(sorted_exons):

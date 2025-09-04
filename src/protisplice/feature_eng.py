@@ -14,7 +14,7 @@ from .data_models import JunctionType, JunctionData, ExtractionParams
 def inject_consensus(
     junc: JunctionData,
     extraction_params: ExtractionParams,
-    junc_type=JunctionType,
+    junc_type: JunctionType,
     idx: Optional[int] = None,
 ) -> JunctionData:
     """Replace the center indices of a sequence window with the donor or acceptor
@@ -22,12 +22,12 @@ def inject_consensus(
     sequences.
 
     Args:
-        seq (str): Sequence of nucleotides
         junc_type (str): Donor or acceptor
-        center_idx (int): Index of the junction where you would expect
-        the consensus sequence to be located in a true splice site.
-        For example...
-
+        extraction_params (ExtractionParams): parameters that were passed in to the extractor.
+        n_exon of extraction_params will be used to calculate determine the proper
+        location to inject the sequence.
+        idx (Optional[int]): If you prefer to supply an index to inject the sequence, this
+        value will be used instead of the position calculated from ExtractionParams.n_exon.
     Returns:
         JunctionData: New JunctionData with modified sequence with donor or acceptor consensus
     """
@@ -51,7 +51,7 @@ def remove_consensus(
     idx: Optional[int] = None,
     *,
     only_if_present: bool = True,
-    replacement: Optional[str] = None,
+    replacement: Optional[str] = None
 ) -> JunctionData:
     """Destroy/remove the canonical dinucleotide at the junction to form a negative.
       - If only_if_present=True, will no-op unless the canonical motif is present.
@@ -66,6 +66,7 @@ def remove_consensus(
         if a canonical motif is found. Defaults to True.
         replacement (Optional[str], optional): Dinucleotide to replace
         the consensus. Defaults to None.
+        seed (Optional[int]): Random state. Defaults to 100.
 
     Raises:
         IndexError: If the index is less than zero or greater than the length
@@ -119,7 +120,7 @@ def _pick_noncanon_dinuc(canonical: str) -> str:
 
     Args:
         canonical (str): Canonical dinucleotide, either "AG" or "GT"
-
+        seed (int): Random state.
     Returns:
         str: Any random dinculeotide combination not equivalent
         to what was passed in
@@ -143,6 +144,15 @@ def _get_consensus_index(
 
     Args:
         junc (JunctionData): JunctionData object
+        extraction_params (ExtractionParams): Parameters passed into the extractor.
+        ExtractionParams.n_exon will be used to calculate the proper location of
+        the consensus motif depending whether it is acceptor or donor.
+        junc_type (Optional[JunctionType]): Junction type of the sequence to
+        find the consensus motif index. If no argument is supplied, the
+        junction type will be obtained from junc.junction.junction_type.
+
+    Raises:
+        ValueError: If the junction type is not donor or acceptor.
 
     Returns:
         int: Start coordinate of the AG or GT dinucleotide

@@ -11,7 +11,6 @@ sequences around splice sites to be used for downstream model training.
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import pysam
-from Bio.Seq import Seq
 from .data_models import (
     SpliceJunction,
     JunctionData,
@@ -20,6 +19,7 @@ from .data_models import (
     Transcript,
     ExtractionParams,
 )
+from .utils import apply_strand
 
 
 def add_intron_coords(transcripts: Dict[str, Transcript]) -> Dict[str, Transcript]:
@@ -150,8 +150,7 @@ class SequenceExtractor:
         if not seq:
             return None
 
-        if junction.strand == StrandType.NEGATIVE:
-            seq = str(Seq(seq).reverse_complement())
+        seq = apply_strand(seq, junction.strand)
 
         return JunctionData(
             junction=junction, window_start=win_start, window_end=win_end, sequence=seq
@@ -173,7 +172,8 @@ class SequenceExtractor:
 
         Returns:
             Tuple[Optional[int], Optional[int]]: Tuple of (start, end), 1-based coordinates
-            calculated from the user's input parameters and the junction coordinates.
+            calculated from the user's input parameters and the junction coordinates or None
+            if strand type and/or junction type are not defined.
         """
         strand = junction.strand
         junc_type = junction.junction_type

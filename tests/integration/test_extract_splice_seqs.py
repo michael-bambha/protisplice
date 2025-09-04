@@ -2,6 +2,7 @@
 File: test_extract_splice_seqs.py
 Description: Updated unit tests for main SpliceSeqExtractor class
 """
+
 # pylint:disable=protected-access
 
 from unittest.mock import Mock, patch
@@ -11,7 +12,6 @@ from protisplice import (
     SamplingParams,
     TranscriptFilter,
     JunctionData,
-    SpliceJunction,
 )
 
 
@@ -101,67 +101,6 @@ class TestSpliceSeqExtractor:
         junctions2 = extractor.junctions
         assert mock_extractor_instance.identify_splice_junctions.call_count == 1
         assert junctions is junctions2
-
-    @patch("protisplice.extract_splice_seqs.SequenceExtractor")
-    def test_extract_positive_sequences(
-        self, mock_seq_extractor, test_gff_file, test_fasta_file
-    ):
-        """Test extracting positive (true) sequences"""
-        mock_extractor_instance = Mock()
-        mock_seq_extractor.return_value = mock_extractor_instance
-        mock_junction_data = [Mock(spec=JunctionData)]
-        mock_extractor_instance.extract_splice_sites.return_value = mock_junction_data
-
-        extractor = SpliceSeqExtractor(str(test_gff_file), str(test_fasta_file))
-        extractor._junctions = [Mock(spec=SpliceJunction)]  # Set cached junctions
-
-        result = extractor.extract_positive_sequences()
-
-        mock_extractor_instance.extract_splice_sites.assert_called_once_with(
-            extractor._junctions
-        )
-        assert result == mock_junction_data
-
-    @patch("protisplice.extract_splice_seqs.RegionalSampler")
-    def test_extract_negative_sequences(
-        self, mock_sampler, test_gff_file, test_fasta_file
-    ):
-        """Test extracting negative (decoy) sequences"""
-        mock_sampler_instance = Mock()
-        mock_sampler.return_value = mock_sampler_instance
-        mock_junction_data = [Mock(spec=JunctionData)]
-        mock_sampler_instance.sample_introns.return_value = mock_junction_data
-
-        extractor = SpliceSeqExtractor(str(test_gff_file), str(test_fasta_file))
-        extractor._transcripts = {"transcript1": Mock()}  # Set cached transcripts
-        extractor._junctions = [Mock(), Mock()]  # Set cached junctions
-
-        result = extractor.extract_negative_sequences(target_count=5, seed=42)
-
-        mock_sampler_instance.sample_introns.assert_called_once_with(
-            extractor._transcripts, 5, 42
-        )
-        assert result == mock_junction_data
-
-    def test_extract_negative_sequences_default_count(
-        self, test_gff_file, test_fasta_file
-    ):
-        """Test extracting negative sequences with default count"""
-        with patch("protisplice.extract_splice_seqs.RegionalSampler") as mock_sampler:
-            mock_sampler_instance = Mock()
-            mock_sampler.return_value = mock_sampler_instance
-            mock_sampler_instance.sample_introns.return_value = []
-
-            extractor = SpliceSeqExtractor(str(test_gff_file), str(test_fasta_file))
-            extractor._transcripts = {"transcript1": Mock()}
-            extractor._junctions = [Mock(), Mock()]  # 2 junctions
-
-            extractor.extract_negative_sequences()  # No target_count specified
-
-            # Should use junction count as default
-            mock_sampler_instance.sample_introns.assert_called_once_with(
-                extractor._transcripts, 2, 100  # default seed
-            )
 
     @patch("protisplice.extract_splice_seqs.RegionalSampler")
     def test_extract_intronic_regions(

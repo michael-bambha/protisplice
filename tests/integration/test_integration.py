@@ -39,6 +39,7 @@ class TestFullPipelineIntegration:
             sampling_params=sampling_params,
             transcript_filter=TranscriptFilter.PROTEIN_CODING,
         )
+        transcripts = extractor.transcripts
 
         # Get basic info
         info = extractor.get_info()
@@ -48,7 +49,7 @@ class TestFullPipelineIntegration:
         assert info["junction_count"] >= 2  # At least one donor and one acceptor
 
         # Extract positive sequences (true splice sites)
-        positive_sequences = extractor.extract_positive_sequences()
+        positive_sequences = extractor.extract_splice_sites()
         assert len(positive_sequences) > 0
         assert all(seq.sequence is not None for seq in positive_sequences)
         assert all(
@@ -56,7 +57,9 @@ class TestFullPipelineIntegration:
         )  # n_exon + n_intron
 
         # Extract negative sequences (decoys)
-        negative_sequences = extractor.extract_negative_sequences(target_count=5)
+        negative_sequences = extractor.regional_sampler.sample_introns(
+            transcripts, target_count=5
+        )
         assert len(negative_sequences) <= 5
         assert all(seq.sequence is not None for seq in negative_sequences)
 
@@ -115,7 +118,7 @@ class TestFullPipelineIntegration:
                 str(complex_gff_file), str(complex_fasta_file), extraction_params=params
             )
 
-            sequences = extractor.extract_positive_sequences()
+            sequences = extractor.extract_splice_sites()
             expected_length = params.window_size
 
             if sequences:  # May be empty for some parameter combinations
@@ -188,7 +191,7 @@ class TestFullPipelineIntegration:
             ),  # Short for motif analysis
         )
 
-        sequences = extractor.extract_positive_sequences()
+        sequences = extractor.extract_splice_sites()
         if len(sequences) < 2:
             pytest.skip("Need at least 2 sequences for motif analysis")
 
@@ -266,7 +269,7 @@ class TestPerformanceIntegration:
 
         transcripts = extractor.transcripts
         junctions = extractor.junctions
-        positive_sequences = extractor.extract_positive_sequences()
+        positive_sequences = extractor.extract_splice_sites()
 
         end_time = time.time()
 
@@ -304,10 +307,16 @@ class TestReproducibilityIntegration:
         """Test that random sampling is reproducible with same seed"""
         extractor1 = SpliceSeqExtractor(str(complex_gff_file), str(complex_fasta_file))
         extractor2 = SpliceSeqExtractor(str(complex_gff_file), str(complex_fasta_file))
+        transcripts1 = extractor1.transcripts
+        transcripts2 = extractor2.transcripts
 
         # Extract with same seed
-        sequences1 = extractor1.extract_negative_sequences(target_count=5, seed=42)
-        sequences2 = extractor2.extract_negative_sequences(target_count=5, seed=42)
+        sequences1 = extractor1.regional_sampler.sample_introns(
+            transcripts1, target_count=5, seed=42
+        )
+        sequences2 = extractor2.regional_sampler.sample_introns(
+            transcripts2, target_count=5, seed=42
+        )
 
         # Should get same results
         assert len(sequences1) == len(sequences2)
@@ -330,8 +339,8 @@ class TestReproducibilityIntegration:
             str(complex_gff_file), str(complex_fasta_file), extraction_params=params
         )
 
-        sequences1 = extractor1.extract_positive_sequences()
-        sequences2 = extractor2.extract_positive_sequences()
+        sequences1 = extractor1.extract_splice_sites()
+        sequences2 = extractor2.extract_splice_sites()
 
         # Should get identical results
         assert len(sequences1) == len(sequences2)

@@ -10,8 +10,8 @@ exonic, and intronic).
 import random
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
+from collections import defaultdict
 import pysam
-from Bio.Seq import Seq
 
 from .data_models import (
     SpliceJunction,
@@ -24,6 +24,7 @@ from .data_models import (
 )
 
 from .sequence_extraction import extract_sequence, add_intron_coords
+from .utils import apply_strand
 
 
 class RegionalSampler:
@@ -53,8 +54,8 @@ class RegionalSampler:
             seed (int, optional): Random state. Defaults to 100.
 
         Returns:
-            List[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
-            win_start: win_start, win_end: win_end, seq: seq}.
+            List[JunctionData]: List of JunctionData objects in the format
+            {junction: SpliceJunction, win_start: win_start, win_end: win_end, seq: seq}.
         """
         random.seed(seed)
         sequences = []
@@ -85,12 +86,12 @@ class RegionalSampler:
 
         Args:
             transcripts (Dict[str, Transcript]): Dict of transcript_id: Transcript
-            target_count (int): Max number of introns to sample
+            target_count (int): Max number of exons to sample
             seed (int, optional): Random state. Defaults to 100.
 
         Returns:
-            List[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
-            win_start: win_start, win_end: win_end, seq: seq}.
+            List[JunctionData]: List of JunctionData objects in the format
+            {junction: SpliceJunction, win_start: win_start, win_end: win_end, seq: seq}.
         """
         random.seed(seed)
         sequences = []
@@ -138,8 +139,8 @@ class RegionalSampler:
             seed (int, optional): Random state. Defaults to 100.
 
         Returns:
-            List[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
-            win_start: win_start, win_end: win_end, seq: seq}.
+            List[JunctionData]: List of JunctionData objects in the format
+            {junction: SpliceJunction, win_start: win_start, win_end: win_end, seq: seq}.
         """
         random.seed(seed)
         sequences = []
@@ -184,8 +185,8 @@ class RegionalSampler:
             max_samples (int): maximum cap on # samples to obtain
 
         Returns:
-            List[JunctionData]: List of Dict in the format {junction: SpliceJunction,
-            win_start: win_start, win_end: win_end, seq: seq}.
+            List[JunctionData]: List of JunctionData objects in the format
+            {junction: SpliceJunction, win_start: win_start, win_end: win_end, seq: seq}.
         """
         if not transcript.introns:
             return []
@@ -229,38 +230,28 @@ class RegionalSampler:
             sample_index (int): Number of the intron ordered 5' to 3'.
 
         Returns:
-            Optional[JunctionData]: List of Dicts in the format {junction: SpliceJunction,
-            win_start: win_start, win_end: win_end, seq: seq}.
+            Optional[JunctionData]: List of JunctionData objects in the format
+            {junction: SpliceJunction, win_start: win_start, win_end: win_end, seq: seq}.
         """
-        # apply the buffer size to shrink possible start/end locations
-        safe_start = intron_start + self.params.buffer_size
-        safe_end = intron_end - self.params.buffer_size
-
-        if safe_end - safe_start + 1 < self.params.window_size:
+        rand_start, rand_end = self._random_window(
+            intron_start, intron_end, self.params.window_size, self.params.buffer_size
+        )
+        if rand_start is None or rand_end is None:
             return None
-
-        # random sampling within buffered region
-        max_start = safe_end - self.params.window_size + 1
-        if safe_start > max_start:
-            return None
-
-        rand_start = random.randint(safe_start, max_start)
-        rand_end = rand_start + self.params.window_size - 1
 
         seq = extract_sequence(fasta, transcript.info.seqid, rand_start, rand_end)
         if not seq:
             return None
 
-        if transcript.info.strand == StrandType.NEGATIVE:
-            seq = str(Seq(seq).reverse_complement())
+        strand = transcript.info.strand
+        seq = apply_strand(seq, strand)
 
-        # create pseudo-junction for consistent output format
-        pseudo_junction = SpliceJunction(
-            id=f"{transcript_id}_intron_{sample_index + 1}",
-            seqid=transcript.info.seqid,
+        pseudo_junction = self._create_pseudo_junction(
+            seqid=transcript_id,
             coord=rand_start,
             strand=transcript.info.strand,
             junction_type=JunctionType.INTRON,
+            sample_index=sample_index + 1,
         )
 
         return JunctionData(
@@ -271,7 +262,7 @@ class RegionalSampler:
         )
 
     def _sample_from_exon(
-        self, fasta: pysam.FastaFile, exon_data: dict, sample_index: int
+        self, fasta: pysam.FastaFile, exon_data: Dict, sample_index: int
     ) -> Optional[JunctionData]:
         """Sample a sequence from a random start position in an exon.
 
@@ -288,38 +279,31 @@ class RegionalSampler:
             sample_index (int): Number of the exon from 5' to 3'
 
         Returns:
-            Optional[JunctionData]: Dict in the format {junction: SpliceJunction,
-            win_start: win_start, win_end: win_end, seq: seq}.
+            Optional[JunctionData]: JunctionData object in the format
+            {junction: SpliceJunction, win_start: win_start, win_end: win_end, seq: seq}.
         """
         exon_start = exon_data["start"]
         exon_end = exon_data["end"]
 
-        safe_start = exon_start + self.params.buffer_size
-        safe_end = exon_end - self.params.buffer_size
-
-        if safe_end - safe_start + 1 < self.params.window_size:
+        rand_start, rand_end = self._random_window(
+            exon_start, exon_end, self.params.window_size, self.params.buffer_size
+        )
+        if rand_start is None or rand_end is None:
             return None
-
-        max_start = safe_end - self.params.window_size + 1
-        if safe_start > max_start:
-            return None
-
-        rand_start = random.randint(safe_start, max_start)
-        rand_end = rand_start + self.params.window_size - 1
 
         seq = extract_sequence(fasta, exon_data["seqid"], rand_start, rand_end)
         if not seq:
             return None
 
-        if exon_data["strand"] == StrandType.NEGATIVE:
-            seq = str(Seq(seq).reverse_complement())
+        strand = exon_data["strand"]
+        seq = apply_strand(seq, strand)
 
-        pseudo_junction = SpliceJunction(
-            id=f"{exon_data['transcript_id']}_exon_{exon_data['exon_index']}_{sample_index}",
-            seqid=exon_data["seqid"],
+        pseudo_junction = self._create_pseudo_junction(
+            seqid=exon_data["transcript_id"],
             coord=rand_start,
-            strand=exon_data["strand"],
+            strand=strand,
             junction_type=JunctionType.EXON,
+            sample_index=sample_index,
         )
 
         return JunctionData(
@@ -346,25 +330,16 @@ class RegionalSampler:
             sample_index (int): Number of the intergenic region
 
         Returns:
-            Optional[JunctionData]: Dict in the format {junction: SpliceJunction,
-            win_start: win_start, win_end: win_end, seq: seq}.
+            Optional[JunctionData]: JunctionData object in the format
+            {junction: SpliceJunction, win_start: win_start, win_end: win_end, seq: seq}.
         """
         region_start, region_end = region
 
-        # Apply buffer to avoid sampling too close to genes
-        safe_start = region_start + self.params.buffer_size
-        safe_end = region_end - self.params.buffer_size
-
-        if safe_end - safe_start + 1 < self.params.window_size:
+        rand_start, rand_end = self._random_window(
+            region_start, region_end, self.params.window_size, self.params.buffer_size
+        )
+        if rand_start is None or rand_end is None:
             return None
-
-        # Random sampling within buffered region
-        max_start = safe_end - self.params.window_size + 1
-        if safe_start > max_start:
-            return None
-
-        rand_start = random.randint(safe_start, max_start)
-        rand_end = rand_start + self.params.window_size - 1
 
         seq = extract_sequence(fasta, seqid, rand_start, rand_end)
         if not seq:
@@ -372,16 +347,14 @@ class RegionalSampler:
 
         # For intergenic regions, randomly choose strand
         strand = random.choice([StrandType.POSITIVE, StrandType.NEGATIVE])
-        if strand == StrandType.NEGATIVE:
-            seq = str(Seq(seq).reverse_complement())
+        seq = apply_strand(seq, strand)
 
-        # Create pseudo-junction for consistent output format
-        pseudo_junction = SpliceJunction(
-            id=f"{seqid}_intergenic_{sample_index}",
+        pseudo_junction = self._create_pseudo_junction(
             seqid=seqid,
             coord=rand_start,
             strand=strand,
             junction_type=JunctionType.INTERGENIC,
+            sample_index=sample_index,
         )
 
         return JunctionData(
@@ -411,10 +384,8 @@ class RegionalSampler:
         intergenic_regions = {}
 
         # group genes by chromosome
-        genes_by_chr = {}
+        genes_by_chr = defaultdict(list)
         for gene in genes.values():
-            if gene.seq_id not in genes_by_chr:
-                genes_by_chr[gene.seq_id] = []
             genes_by_chr[gene.seq_id].append(gene)
 
         for seqid, chr_genes in genes_by_chr.items():
@@ -443,6 +414,65 @@ class RegionalSampler:
             intergenic_regions[seqid] = regions
 
         return intergenic_regions
+
+    def _random_window(
+        self, region_start: int, region_end: int, window_size: int, buffer_size: int
+    ) -> Tuple[Optional[int], Optional[int]]:
+        """Given the window size, start and end coordinates of a region, and a buffer size, randomly
+        choose valid window coordinates.
+
+        Args:
+            region_start (int): Coordinate of gene/exon/intron start
+            region_end (int): Coordinate of gene/exon/intron end
+            window_size (int): Number of bases for the sequence window
+            buffer_size (int): Buffer size away from region_start/region_end
+
+        Returns:
+            Tuple[int, int]: Coordinates of (start, end) of the random window
+        """
+        safe_start = region_start + buffer_size
+        safe_end = region_end - buffer_size
+
+        if safe_end - safe_start + 1 < window_size:
+            return None, None
+
+        max_start = safe_end - window_size + 1
+        if safe_start > max_start:
+            return None, None
+
+        rand_start = random.randint(safe_start, max_start)
+        rand_end = rand_start + window_size - 1
+
+        return rand_start, rand_end
+
+    def _create_pseudo_junction(
+        self,
+        seqid: str,
+        coord: int,
+        strand: StrandType,
+        junction_type: JunctionType,
+        sample_index: int,
+    ) -> SpliceJunction:
+        """Create pseudo-junction for decoy sites to keep data format the same across decoy
+        and true splice sites. Coord for pseudo-junctions should just be the start position
+        of the random window (rand_start).
+
+        Args:
+            seqid (str): ID of the sampled junction
+            coord (int): rand_start of the window
+            strand (StrandType): (+) or (-)
+            junction_type (JunctionType): "intergenic", "exon", or "intron"
+
+        Returns:
+            SpliceJunction: SpliceJunction object with
+        """
+        return SpliceJunction(
+            id=f"{seqid}_{junction_type.value}_{sample_index}",
+            seqid=seqid,
+            coord=coord,
+            strand=strand,
+            junction_type=junction_type,
+        )
 
     def get_chromosome_lengths(self) -> Dict[str, int]:
         """Find the length of any FASTA sequence with pysam.

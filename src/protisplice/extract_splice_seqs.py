@@ -123,35 +123,6 @@ class SpliceSeqExtractor:
             self._chromosome_lengths = self.regional_sampler.get_chromosome_lengths()
         return self._chromosome_lengths
 
-    def extract_positive_sequences(self) -> List[JunctionData]:
-        """Finds the sequences for identified true splice sites.
-
-        Returns:
-            List[JunctionData]: List of {junction: SpliceJunction, win_start: win_start,
-            win_end: win_end, sequence: sequence}
-        """
-        return self.sequence_extractor.extract_splice_sites(self.junctions)
-
-    def extract_negative_sequences(
-        self, target_count: Optional[int] = None, seed: int = 100
-    ) -> List[JunctionData]:
-        """Finds the sequence for randomly determined start position of an intron.
-
-        Args:
-            target_count (Optional[int], optional): Max number of sequences to sample.
-            Defaults to None.
-            seed (int): Random seed. Defaults to 100.
-
-        Returns:
-            List[JunctionData]: List of {junction: SpliceJunction, win_start: win_start,
-            win_end: win_end, sequence: sequence}
-        """
-        if target_count is None:
-            target_count = len(self.junctions)
-        return self.regional_sampler.sample_introns(
-            self.transcripts, target_count, seed
-        )
-
     def extract_splice_sites(self) -> List[JunctionData]:
         """Find sequences around true splice sites.
 

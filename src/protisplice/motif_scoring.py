@@ -34,7 +34,8 @@ def generate_pfm(seqs: List[Seq]) -> pd.DataFrame:
         seqs (List[Seq]): List of aligned sequences (Bio.Seq objects).
 
     Returns:
-        pd.DataFrame: Pandas dataframe containing the probability for each sequence
+        pd.DataFrame: Pandas dataframe containing the probability of each nucleotide
+        at each position
     """
     motif = motifs.create(seqs)
     pfm = pd.DataFrame.from_dict(motif.counts, orient="index")
@@ -71,6 +72,6 @@ def generate_pwm(
     if background_freq is None:
         background_freq = {base: 0.25 for base in "ACGT"}
 
-    pwm = ppm.div(pd.Series(background_freq), axis=0).applymap(np.log2)
+    pwm = ppm.div(pd.Series(background_freq), axis=0).map(np.log2)
 
     return pwm

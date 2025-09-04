@@ -33,13 +33,11 @@ class GFFParser:
 
     def parse_transcripts(self) -> Dict[str, Transcript]:
         """Parses a GFF3 file and obtains all transcripts found into a dictionary
-        of transcript_id: Transcript. Transcript object contains the sequence ID, strand,
-        exons, and introns of the transcript.
+        of transcript_id: Transcript. Each Transcript object contains the sequence ID, strand,
+        and a list of exons.
 
         Returns:
-            Dict[str, Transcript]: Dict of transcript_id: Transcript. Transcript object:
-            {{TranscriptInfo: seqid, strand}, {exons: List[start, end]},
-            {introns: List[start, end] = None}}
+            Dict[str, Transcript]: Dictionary mapping transcript_id to Transcript objects.
         """
         transcript_biotypes = {}
         if self.transcript_filter != TranscriptFilter.ALL:
@@ -70,11 +68,11 @@ class GFFParser:
 
     def parse_genes(self) -> Dict[str, Gene]:
         """Parses a GFF3 file and obtains all genes found into a dictionary
-        of gene_id: Gene. Gene object contains the sequence ID (generally the chromosome), start
-        and end coordinates (1-based), and strand.
+        of gene_id: Gene. Each Gene object contains the sequence ID (generally the chromosome),
+        start and end coordinates (1-based), and strand.
 
         Returns:
-            Dict[str, Gene]: Dict of gene_id: Gene object.
+            Dict[str, Gene]: Dictionary mapping gene_id to Gene objects.
         """
         genes = {}
 
@@ -103,14 +101,15 @@ class GFFParser:
     def _parse_gff_line(
         self, line: str, transcript_biotypes: Dict[str, str]
     ) -> Optional[Tuple]:
-        """Parse GFF3 line for exons and return transcript data
+        """Parse a GFF3 line for exon features and return transcript data.
 
         Args:
             line (str): Line to parse
             transcript_biotypes (Dict[str, str]): Dict of {ID: biotype}
 
         Returns:
-            Optional[Tuple]: Tuple of (transcript_id, seq_id, start, end, strand)
+            Optional[Tuple]: Tuple of (transcript_id, seq_id, start, end, strand) if valid
+            exon line, else None
         """
         try:
             if line.startswith("#") or not line.strip():
@@ -133,7 +132,7 @@ class GFFParser:
             if not transcript_id:
                 return None
 
-            transcript_id = ExpressionFilter.normalize_transcript_id(transcript_id)
+            transcript_id = self._normalize_transcript_id(transcript_id)
 
             if not self._passes_filter(transcript_id, transcript_biotypes):
                 return None
@@ -153,20 +152,21 @@ class GFFParser:
     def _parse_gene_line(
         self, fields: List[str]
     ) -> Optional[Tuple[str, str, int, int, str]]:
-        """_summary_
+        """Parse a GFF3 gene line to extract gene information.
 
         Args:
-            fields (List[str]): _description_
+            fields (List[str]): List of fields from a GFF3 gene line.
 
         Returns:
-            Optional[Tuple[str, str, int, int, str]]: _description_
+            Optional[Tuple[str, str, int, int, str]]: Tuple containing
+            (gene_id, seqid, start, end, strand) if valid, else None.
         """
         try:
             attrs = self._extract_gff_attrs(fields[8])
             gene_id = attrs.get("ID", "")
             if not gene_id:
                 return None
-            gene_id = ExpressionFilter.normalize_transcript_id(gene_id)
+            gene_id = self._normalize_transcript_id(gene_id)
 
             seqid = fields[0]
             start = int(fields[3])
@@ -179,12 +179,23 @@ class GFFParser:
             return None
 
     def _collect_transcript_biotypes(self) -> Dict[str, str]:
-        """Get the annotation biotype associated with each transcript
+        """Collect the annotation biotype associated with each transcript from the GFF3 file.
 
         Returns:
-            Dict[str, str]: Dict of {transcript_id: biotype}
+            Dict[str, str]: Dictionary mapping transcript_id to biotype.
         """
         transcript_biotypes = {}
+        allowed_feature_types = {
+            "mRNA",
+            "transcript",
+            "lncRNA",
+            "miRNA",
+            "ncRNA",
+            "rRNA",
+            "snoRNA",
+            "snRNA",
+            "tRNA",
+        }
 
         with open(self.gff_path, "r", encoding="utf-8") as file:
             for line in file:
@@ -196,22 +207,12 @@ class GFFParser:
                     continue
 
                 feature_type = fields[2]
-                if feature_type not in [
-                    "mRNA",
-                    "transcript",
-                    "lncRNA",
-                    "miRNA",
-                    "ncRNA",
-                    "rRNA",
-                    "snoRNA",
-                    "snRNA",
-                    "tRNA",
-                ]:
+                if feature_type not in allowed_feature_types:
                     continue
 
                 attrs = self._extract_gff_attrs(fields[8])
                 transcript_id = attrs.get("ID", "")
-                transcript_id = ExpressionFilter.normalize_transcript_id(transcript_id)
+                transcript_id = self._normalize_transcript_id(transcript_id)
 
                 biotype = None
                 for attr_name in [
@@ -231,13 +232,13 @@ class GFFParser:
         return transcript_biotypes
 
     def _extract_gff_attrs(self, gff_attributes: str) -> Dict[str, str]:
-        """Parse the 9th field of a GFF3 formatted line
+        """Parse the 9th field of a GFF3 formatted line.
 
         Args:
-            gff_attributes (str): 9th field of GFF3 line
+            gff_attributes (str): 9th field of GFF3 line.
 
         Returns:
-            Dict[str, str]: Parsed field into dict
+            Dict[str, str]: Parsed attributes as a dictionary.
         """
         attrs = {}
         for part in filter(None, gff_attributes.strip().split(";")):
@@ -249,14 +250,14 @@ class GFFParser:
     def _passes_filter(
         self, transcript_id: str, transcript_biotypes: Dict[str, str]
     ) -> bool:
-        """Check if a filter passes expression and biotype filters
+        """Check if a transcript passes the expression and biotype filters.
 
         Args:
-            transcript_id (str): ID of the transcript
-            transcript_biotypes (Dict[str, str]): Dict of {transcript_id: biotype}
+            transcript_id (str): ID of the transcript.
+            transcript_biotypes (Dict[str, str]): Dict of {transcript_id: biotype}.
 
         Returns:
-            bool: T/F if transcript passes filter
+            bool: True if transcript passes filter, False otherwise.
         """
         if self.transcript_filter == TranscriptFilter.PROTEIN_CODING:
             biotype = transcript_biotypes.get(transcript_id, "")
@@ -269,3 +270,14 @@ class GFFParser:
             return False
 
         return True
+
+    def _normalize_transcript_id(self, transcript_id: str) -> str:
+        """Normalize transcript ID using ExpressionFilter's normalization.
+
+        Args:
+            transcript_id (str): The transcript ID to normalize.
+
+        Returns:
+            str: Normalized transcript ID.
+        """
+        return ExpressionFilter.normalize_transcript_id(transcript_id)
