@@ -17,7 +17,6 @@ class TestFastaWriter:
 
     def test_write_sequences(self, temp_dir):
         """Test writing sequences to FASTA file"""
-        # Create sample junction data
         junction1 = SpliceJunction(
             id="transcript1_donor_0",
             seqid="chr1",

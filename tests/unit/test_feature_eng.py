@@ -2,6 +2,7 @@
 File: test_feature_eng.py
 Description: Unit tests for feature engineering module
 """
+
 # pylint:disable=redefined-outer-name
 
 import pytest
@@ -15,10 +16,8 @@ from protisplice import (
 from protisplice.feature_eng import (
     inject_consensus,
     remove_consensus,
-    _get_consensus_index,
-    _motif_for,
-    _pick_noncanon_dinuc,
 )
+from protisplice.utils import get_consensus_index, motif_for, pick_noncanon_dinuc
 
 
 @pytest.fixture
@@ -275,7 +274,7 @@ class TestHelperFunctions:
             junction=junction, window_start=10, window_end=130, sequence="A" * 120
         )
 
-        idx = _get_consensus_index(junction_data, extraction_params, JunctionType.DONOR)
+        idx = get_consensus_index(extraction_params, junction_data, JunctionType.DONOR)
         expected = extraction_params.n_exon  # Should be 40 for donor
         assert idx == expected
 
@@ -292,8 +291,8 @@ class TestHelperFunctions:
             junction=junction, window_start=10, window_end=130, sequence="A" * 120
         )
 
-        idx = _get_consensus_index(
-            junction_data, extraction_params, JunctionType.ACCEPTOR
+        idx = get_consensus_index(
+            extraction_params, junction_data, JunctionType.ACCEPTOR
         )
         expected = extraction_params.n_exon - 2  # Should be 38 for acceptor
         assert idx == expected
@@ -314,7 +313,7 @@ class TestHelperFunctions:
         with pytest.raises(
             ValueError, match="Junction type must be either donor or acceptor"
         ):
-            _get_consensus_index(junction_data, extraction_params, JunctionType.INTRON)
+            get_consensus_index(extraction_params, junction_data, JunctionType.INTRON)
 
     def test_get_consensus_index_uses_junction_type_when_none_provided(
         self, extraction_params
@@ -331,28 +330,28 @@ class TestHelperFunctions:
             junction=junction, window_start=10, window_end=130, sequence="A" * 120
         )
 
-        idx = _get_consensus_index(
-            junction_data, extraction_params
+        idx = get_consensus_index(
+            extraction_params, junction_data,
         )  # No junc_type provided
         expected = extraction_params.n_exon  # Should use DONOR from junction
         assert idx == expected
 
     def test_motif_for_donor(self):
         """Test getting motif for donor"""
-        assert _motif_for(JunctionType.DONOR) == "GT"
+        assert motif_for(JunctionType.DONOR) == "GT"
 
     def test_motif_for_acceptor(self):
         """Test getting motif for acceptor"""
-        assert _motif_for(JunctionType.ACCEPTOR) == "AG"
+        assert motif_for(JunctionType.ACCEPTOR) == "AG"
 
     def test_pick_noncanon_dinuc(self):
         """Test picking non-canonical dinucleotide"""
-        result = _pick_noncanon_dinuc("GT")
+        result = pick_noncanon_dinuc("GT")
         assert len(result) == 2
         assert result != "GT"
         assert all(base in "ACGT" for base in result)
 
-        result = _pick_noncanon_dinuc("AG")
+        result = pick_noncanon_dinuc("AG")
         assert len(result) == 2
         assert result != "AG"
         assert all(base in "ACGT" for base in result)

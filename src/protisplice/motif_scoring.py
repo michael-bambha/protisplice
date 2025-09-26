@@ -4,6 +4,8 @@ Description: Generate PFM/PWM/PPM from aligned DNA sequences
 """
 
 from typing import List, Dict
+from collections import Counter
+import math
 from Bio import motifs
 from Bio.Seq import Seq
 import pandas as pd
@@ -53,7 +55,6 @@ def generate_pwm(
         background_freq (Dict[str, float], optional): Background frequency of the genome/chromosome
         of origin of the sequences. If None is passed in, equal probabilities of 0.25 will be used
         for all nucleotides.
-        epsilon (float, optional): Pseudocount to prevent divide by 0 errors. Defaults to 1e-10.
 
     Returns:
         pd.DataFrame: Pandas dataframe containing the log-odds for each nucleotide at each position.
@@ -75,3 +76,23 @@ def generate_pwm(
     pwm = ppm.div(pd.Series(background_freq), axis=0).map(np.log2)
 
     return pwm
+
+
+def calculate_shannon_entropy(seq: str) -> float:
+    """Calculate the Shannon entropy for a DNA sequence.
+
+    Args:
+        seq (str): DNA sequence to calculate the Shannon entropy for.
+
+    Returns:
+        float: Shannon entropy
+    """
+    if not seq:
+        return 0.0
+    counts = Counter(seq)
+    total_len = len(seq)
+    entropy = 0.0
+    for count in counts.values():
+        p = count / total_len
+        entropy -= p * math.log2(p)
+    return entropy

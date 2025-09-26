@@ -35,7 +35,7 @@ class TranscriptFilter(Enum):
     EXPRESSED = "expressed"
 
 
-@dataclass
+@dataclass(eq=False)
 class SpliceJunction:
     """Data class for splice junction info"""
 
@@ -44,6 +44,19 @@ class SpliceJunction:
     coord: int  # 1-based coord of first exon base
     strand: StrandType
     junction_type: JunctionType
+
+    def __eq__(self, other):
+        if not isinstance(other, SpliceJunction):
+            return NotImplemented
+        return (self.seqid, self.coord, self.strand, self.junction_type) == (
+            other.seqid,
+            other.coord,
+            other.strand,
+            other.junction_type,
+        )
+
+    def __hash__(self):
+        return hash((self.seqid, self.coord, self.strand, self.junction_type))
 
 
 @dataclass

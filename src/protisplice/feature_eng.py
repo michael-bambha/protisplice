@@ -6,9 +6,9 @@ splice sites to create stronger decoys.
 """
 
 from typing import Optional
-import random
 from copy import deepcopy
 from .data_models import JunctionType, JunctionData, ExtractionParams
+from .utils import pick_noncanon_dinuc, get_consensus_index, motif_for
 
 
 def inject_consensus(
@@ -34,12 +34,12 @@ def inject_consensus(
     new_junc = deepcopy(junc)  # copy to not modify object in-place
     seq = new_junc.sequence
     if idx is None:
-        idx = _get_consensus_index(junc, extraction_params, junc_type)
+        idx = get_consensus_index(extraction_params, junc, junc_type)
     if idx < 0 or idx + 1 >= len(seq):
         raise IndexError(
             f"Consensus start idx {idx} out of bounds for sequence of length {len(seq)}"
         )
-    consensus = _motif_for(junc_type)
+    consensus = motif_for(junc_type)
     new_seq = seq[:idx] + consensus + seq[idx + 2:]
     new_junc.sequence = new_seq
     return new_junc
@@ -51,7 +51,7 @@ def remove_consensus(
     idx: Optional[int] = None,
     *,
     only_if_present: bool = True,
-    replacement: Optional[str] = None
+    replacement: Optional[str] = None,
 ) -> JunctionData:
     """Destroy/remove the canonical dinucleotide at the junction to form a negative.
       - If only_if_present=True, will no-op unless the canonical motif is present.
@@ -86,14 +86,14 @@ def remove_consensus(
     if idx is None:
         if extraction_params is None:
             raise ValueError("extraction params required when idx is None")
-        idx = _get_consensus_index(junc, extraction_params, junc_type)
+        idx = get_consensus_index(extraction_params, junc, junc_type)
     if idx < 0 or idx + 1 >= len(seq):
         raise IndexError(
             f"Consensus start idx {idx} out of bounds for sequence of length {len(seq)}"
         )
 
-    canonical = _motif_for(junc_type)
-    current = seq[idx: idx + 2]
+    canonical = motif_for(junc_type)
+    current = seq[idx: idx+2]
 
     if only_if_present and current != canonical:
         return junc  # leave as-is if not canonical here
@@ -105,80 +105,10 @@ def remove_consensus(
             )
         mutant = replacement
     else:
-        mutant = _pick_noncanon_dinuc(canonical)
+        mutant = pick_noncanon_dinuc(canonical)
 
     new_seq = (
         seq[:idx] + mutant + seq[idx + 2:]
     )  # replace dinuc with mutant at correct pos
     new_junc.sequence = new_seq
     return new_junc
-
-
-def _pick_noncanon_dinuc(canonical: str) -> str:
-    """Pick a random dinucleotide != the
-    passed in canonical motif
-
-    Args:
-        canonical (str): Canonical dinucleotide, either "AG" or "GT"
-        seed (int): Random state.
-    Returns:
-        str: Any random dinculeotide combination not equivalent
-        to what was passed in
-    """
-    bases = "ACGT"
-    while True:
-        mutant = random.choice(bases) + random.choice(bases)
-        if mutant != canonical:
-            return mutant
-
-
-def _get_consensus_index(
-    junc: JunctionData,
-    extraction_params: ExtractionParams,
-    junc_type: Optional[JunctionType] = None,
-) -> int:
-    """Helper function for getting correct coordinates of the
-    motif based on junction.coord. If no junction type is passed in,
-    the function will look for the junction type of the passed in JunctionData object.
-
-
-    Args:
-        junc (JunctionData): JunctionData object
-        extraction_params (ExtractionParams): Parameters passed into the extractor.
-        ExtractionParams.n_exon will be used to calculate the proper location of
-        the consensus motif depending whether it is acceptor or donor.
-        junc_type (Optional[JunctionType]): Junction type of the sequence to
-        find the consensus motif index. If no argument is supplied, the
-        junction type will be obtained from junc.junction.junction_type.
-
-    Raises:
-        ValueError: If the junction type is not donor or acceptor.
-
-    Returns:
-        int: Start coordinate of the AG or GT dinucleotide
-    """
-    exon_idx = extraction_params.n_exon
-    if not junc_type:
-        junc_type = junc.junction.junction_type
-    if junc_type == JunctionType.DONOR:
-        # Donor site = GT starting at exon_idx (first 2 bases of intron)
-        return exon_idx
-    if junc_type == JunctionType.ACCEPTOR:
-        # Acceptor site = AG ending right before exon_idx
-        return exon_idx - 2
-
-    raise ValueError(
-        f"Junction type must be either donor or acceptor, not {junc_type}."
-    )
-
-
-def _motif_for(junc_type: JunctionType) -> str:
-    """Return GT for donors, AG for acceptors
-
-    Args:
-        junc_type (JunctionType): Junction type (Donor or Acceptor)
-
-    Returns:
-        str: "GT" for donor, "AG" for acceptor
-    """
-    return "GT" if junc_type == JunctionType.DONOR else "AG"
