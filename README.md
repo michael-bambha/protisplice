@@ -6,6 +6,8 @@ A Python package for extracting splice site sequences from any organism given
 a FASTA and GFF3 annotation file. Protisplice allows for streamlined dataset generation
 for splice site classifiers.
 
+![Alt Text](/figs/acceptor.png)
+
 In addition to locating true splice sites of any length, users can also generate
 a "decoy" set of sequences that can be sampled from regions near, but not containing,
 splice sites, or from intergenic regions. Users can define a buffer size, which
