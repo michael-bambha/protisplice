@@ -12,7 +12,8 @@ from protisplice.data_models import (
     JunctionType,
     ExtractionParams,
 )
-from protisplice.motif_scoring import calculate_shannon_entropy
+
+# from protisplice.motif_scoring import calculate_shannon_entropy
 
 
 def apply_strand(seq: str, strand: StrandType) -> str:
@@ -106,4 +107,3 @@ def motif_for(junc_type: JunctionType) -> str:
             f"Junction type must be either donor or acceptor, not {junc_type}."
         )
     return "GT" if junc_type == JunctionType.DONOR else "AG"
-

@@ -64,37 +64,39 @@ class SpliceJunctionExtractor:
         junctions = []
 
         for i, (exon_start, exon_end) in enumerate(sorted_exons):
-            # Acceptor sites (except for first exon)
+            # For first exon boundary (except first exon)
             if i > 0:
-                coord = (
-                    exon_start
-                    if transcript.info.strand == StrandType.POSITIVE
-                    else exon_end
-                )
+                if transcript.info.strand == StrandType.POSITIVE:
+                    junction_type = JunctionType.ACCEPTOR
+                else:
+                    # On negative strand, this is actually a donor
+                    junction_type = JunctionType.DONOR
+
                 junctions.append(
                     SpliceJunction(
-                        id=f"{transcript_id}_acceptor_{i}",
+                        id=f"{transcript_id}_{junction_type.value}_{i}",
                         seqid=transcript.info.seqid,
-                        coord=coord,
+                        coord=exon_start,
                         strand=transcript.info.strand,
-                        junction_type=JunctionType.ACCEPTOR,
+                        junction_type=junction_type,
                     )
                 )
 
-            # Donor sites (except for last exon)
+            # For last exon boundary (except last exon)
             if i < len(sorted_exons) - 1:
-                coord = (
-                    exon_end
-                    if transcript.info.strand == StrandType.POSITIVE
-                    else exon_start
-                )
+                if transcript.info.strand == StrandType.POSITIVE:
+                    junction_type = JunctionType.DONOR
+                else:
+                    # On negative strand, this is actually an acceptor
+                    junction_type = JunctionType.ACCEPTOR
+
                 junctions.append(
                     SpliceJunction(
-                        id=f"{transcript_id}_donor_{i}",
+                        id=f"{transcript_id}_{junction_type.value}_{i}",
                         seqid=transcript.info.seqid,
-                        coord=coord,
+                        coord=exon_end,
                         strand=transcript.info.strand,
-                        junction_type=JunctionType.DONOR,
+                        junction_type=junction_type,
                     )
                 )
 
