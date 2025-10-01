@@ -64,12 +64,10 @@ class SpliceJunctionExtractor:
         junctions = []
 
         for i, (exon_start, exon_end) in enumerate(sorted_exons):
-            # For first exon boundary (except first exon)
             if i > 0:
                 if transcript.info.strand == StrandType.POSITIVE:
                     junction_type = JunctionType.ACCEPTOR
                 else:
-                    # On negative strand, this is actually a donor
                     junction_type = JunctionType.DONOR
 
                 junctions.append(
@@ -82,12 +80,10 @@ class SpliceJunctionExtractor:
                     )
                 )
 
-            # For last exon boundary (except last exon)
             if i < len(sorted_exons) - 1:
                 if transcript.info.strand == StrandType.POSITIVE:
                     junction_type = JunctionType.DONOR
                 else:
-                    # On negative strand, this is actually an acceptor
                     junction_type = JunctionType.ACCEPTOR
 
                 junctions.append(

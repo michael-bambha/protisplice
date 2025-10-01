@@ -102,6 +102,19 @@ class SpliceSeqExtractor:
         return self._junctions
 
     @property
+    def unique_junctions(self) -> List[SpliceJunction]:
+        """Obtain only unique junctions by genomic coordinates. Junctions are parsed
+        per-transcript, so many duplicates will be present in the original junctions
+        property due to alternative splicing.
+
+        Returns:
+            List[SpliceJunction]: List of {id: transcriptid_junctype_num, seqid: chr#,
+            coord: 1-based coord of first exon base, strand: + or -, junc_type: donor or acceptor}
+            for only unique seqid, coord, strand, and junc_type
+        """
+        return list(set(self.junctions))
+
+    @property
     def genes(self) -> Dict[str, Gene]:
         """Lazy-loaded genes
 
